@@ -31,25 +31,39 @@ static void test_names_and_count(void)
 static void test_is_software(void)
 {
     TEST_ASSERT_FALSE(look_is_software(LOOK_NORMAL));
-    TEST_ASSERT_FALSE(look_is_software(LOOK_COOL));
-    TEST_ASSERT_FALSE(look_is_software(LOOK_WARM));
-    TEST_ASSERT_FALSE(look_is_software(LOOK_BW));
-    for (look_t l = LOOK_PIXEL_RED; l < LOOK_COUNT; l++) {
+    for (look_t l = LOOK_COOL; l < LOOK_COUNT; l++) {
         TEST_ASSERT_TRUE(look_is_software(l));
     }
 }
 
-static void test_sensor_looks_untouched_in_software(void)
+static void test_normal_untouched(void)
 {
-    const look_t sensor_looks[] = {LOOK_NORMAL, LOOK_COOL, LOOK_WARM, LOOK_BW};
-    for (size_t i = 0; i < 4; i++) {
-        uint8_t *img = random_image(64, 64, 1);
-        uint8_t *ref = random_image(64, 64, 1);
-        look_apply_rgb888(sensor_looks[i], img, 64, 64, 0, 64, 64);
-        TEST_ASSERT_EQUAL_MEMORY(ref, img, 64 * 64 * 3);
-        free(img);
-        free(ref);
+    uint8_t *img = random_image(64, 64, 1);
+    uint8_t *ref = random_image(64, 64, 1);
+    look_apply_rgb888(LOOK_NORMAL, img, 64, 64, 0, 64, 64);
+    TEST_ASSERT_EQUAL_MEMORY(ref, img, 64 * 64 * 3);
+    free(img);
+    free(ref);
+}
+
+static void test_bw_is_gray(void)
+{
+    uint8_t *img = random_image(64, 64, 2);
+    look_apply_rgb888(LOOK_BW, img, 64, 64, 0, 64, 64);
+    for (int i = 0; i < 64 * 64; i++) {
+        TEST_ASSERT_EQUAL(img[i * 3], img[i * 3 + 1]);
+        TEST_ASSERT_EQUAL(img[i * 3], img[i * 3 + 2]);
     }
+    free(img);
+}
+
+static void test_cool_and_warm_shift(void)
+{
+    uint8_t px[2][3] = {{128, 128, 128}, {128, 128, 128}};
+    look_apply_rgb888(LOOK_COOL, px[0], 1, 1, 0, 1, 1);
+    look_apply_rgb888(LOOK_WARM, px[1], 1, 1, 0, 1, 1);
+    TEST_ASSERT_GREATER_THAN(px[0][0], px[0][2]); /* cool: blue > red */
+    TEST_ASSERT_GREATER_THAN(px[1][2], px[1][0]); /* warm: red > blue */
 }
 
 static void test_pixel_block_sizes(void)
@@ -99,7 +113,7 @@ static void test_strip_equals_whole_for_every_software_look(void)
 {
     const int w = 640, h = 480;
     const int strip = look_pixel_block(w) * 2;
-    for (look_t l = LOOK_PIXEL_RED; l < LOOK_COUNT; l++) {
+    for (look_t l = LOOK_COOL; l < LOOK_COUNT; l++) {
         uint8_t *whole = random_image(w, h, 7);
         uint8_t *strips = random_image(w, h, 7);
         look_apply_rgb888(l, whole, w, h, 0, w, h);
@@ -179,7 +193,9 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_names_and_count);
     RUN_TEST(test_is_software);
-    RUN_TEST(test_sensor_looks_untouched_in_software);
+    RUN_TEST(test_normal_untouched);
+    RUN_TEST(test_bw_is_gray);
+    RUN_TEST(test_cool_and_warm_shift);
     RUN_TEST(test_pixel_block_sizes);
     RUN_TEST(test_pixel_filter_two_tones);
     RUN_TEST(test_strip_equals_whole_for_every_software_look);

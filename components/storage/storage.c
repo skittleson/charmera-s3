@@ -104,6 +104,7 @@ static bool try_mount(void)
 {
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     host.slot = BOARD_SPI_HOST;
+    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED; /* 40 MHz; the card negotiates down if needed */
     sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
     slot.gpio_cs = BOARD_PIN_SD_CS;
     slot.host_id = BOARD_SPI_HOST;
@@ -121,7 +122,7 @@ static bool try_mount(void)
     s_mounted = true;
     load_avg();
     rescan();
-    ESP_LOGI(TAG, "card mounted: %s, %u photos, next %d", s_card->cid.name,
+    ESP_LOGI(TAG, "card mounted: %s @ %d kHz, %u photos, next %d", s_card->cid.name, s_card->real_freq_khz,
              (unsigned)s_photo_count, s_next_number);
     return true;
 }

@@ -21,8 +21,20 @@
    encode JPEG ourselves. 16 MHz gives ~0.8 s per full-res frame. */
 #define XCLK_HZ 16000000
 
-/* Frames dropped after a restart while auto-exposure settles. */
-#define SETTLE_FRAMES 2
+/* Frames dropped after a restart. */
+#define SETTLE_FRAMES 1
+
+/* OV2640 sensor-bank registers (bank bit = 0x100 for get_reg/set_reg). */
+#define REG_GAIN  0x100
+#define REG_04    0x104
+#define REG_AEC   0x110
+#define REG_45    0x145
+
+/* Preview exposure (in sensor lines) carried into the capture, scaled x/256.
+   1:1 matched brightness on the board. */
+#ifndef AEC_SCALE
+#define AEC_SCALE 256
+#endif
 
 /* Preview: the sensor's 320x240 frame is turned 90 degrees to be upright in the
    portrait grip (USB-C down). Flip if it shows upside down. */
@@ -74,7 +86,9 @@ static esp_err_t start(framesize_t size)
         .frame_size = size,
         .fb_count = size == FRAMESIZE_QVGA ? 2 : 1,
         .fb_location = CAMERA_FB_IN_PSRAM,
-        .grab_mode = CAMERA_GRAB_LATEST,
+        /* With one full-res buffer, "latest" lets the driver overwrite the frame while
+           we encode it; "when empty" holds it until returned. */
+        .grab_mode = size == FRAMESIZE_QVGA ? CAMERA_GRAB_LATEST : CAMERA_GRAB_WHEN_EMPTY,
     };
     esp_err_t err = esp_camera_init(&c);
     if (err != ESP_OK) {
@@ -189,13 +203,15 @@ static inline void sensor_rgb(const camera_fb_t *fb, int sx, int sy, uint8_t *rg
 
 void camera_photo_rows_rgb888(const camera_fb_t *fb, int y0, int rows, uint8_t *out)
 {
+    /* Portrait row py comes from sensor column sx, so walk each sensor row once and
+       read the strip's span of it contiguously (much kinder to the PSRAM cache than
+       reading columns). */
     const int w = s_full_h;
-    for (int r = 0; r < rows; r++) {
-        uint8_t *o = out + (size_t)r * w * 3;
-        for (int x = 0; x < w; x++, o += 3) {
+    for (int px = 0; px < w; px++) {
+        for (int r = 0; r < rows; r++) {
             int sx, sy;
-            photo_to_sensor(x, y0 + r, &sx, &sy);
-            sensor_rgb(fb, sx, sy, o);
+            photo_to_sensor(px, y0 + r, &sx, &sy);
+            sensor_rgb(fb, sx, sy, out + ((size_t)r * w + px) * 3);
         }
     }
 }
@@ -267,12 +283,45 @@ esp_err_t camera_focus(uint32_t timeout_ms)
 #endif
 }
 
+static int s_last_aec, s_last_gain;
+
+/* Freeze the preview's auto exposure/gain into manual values at full resolution, so the
+   photo matches the viewfinder and isn't taken mid-adjustment. */
+static void carry_exposure(int aec, int gain)
+{
+    s_sensor->set_exposure_ctrl(s_sensor, 0);
+    s_sensor->set_gain_ctrl(s_sensor, 0);
+    s_sensor->set_reg(s_sensor, REG_GAIN, 0xff, gain);
+    int v = aec * AEC_SCALE / 256;
+    if (v < 1) {
+        v = 1;
+    }
+    s_sensor->set_reg(s_sensor, REG_04, 0x03, v & 0x3);
+    s_sensor->set_reg(s_sensor, REG_AEC, 0xff, (v >> 2) & 0xff);
+    s_sensor->set_reg(s_sensor, REG_45, 0x3f, (v >> 10) & 0x3f);
+}
+
+void camera_last_exposure(int *aec, int *gain)
+{
+    *aec = s_last_aec;
+    *gain = s_last_gain;
+}
+
 camera_fb_t *camera_capture_full(void)
 {
+    const int aec = (s_sensor->get_reg(s_sensor, REG_45, 0x3f) << 10) |
+                    (s_sensor->get_reg(s_sensor, REG_AEC, 0xff) << 2) |
+                    s_sensor->get_reg(s_sensor, REG_04, 0x03);
+    const int gain = s_sensor->get_reg(s_sensor, REG_GAIN, 0xff);
+    s_last_aec = aec;
+    s_last_gain = gain;
     esp_camera_deinit();
     if (start(s_full_size) != ESP_OK) {
         start(FRAMESIZE_QVGA);
         return NULL;
+    }
+    if (s_sensor->id.PID == OV2640_PID && aec > 0) {
+        carry_exposure(aec, gain);
     }
     drop_frames(SETTLE_FRAMES);
     camera_fb_t *fb = esp_camera_fb_get();

@@ -21,7 +21,7 @@ typedef enum {
 
 const char *look_name(look_t l);
 
-/* Pixel filters and frames are done in software; Normal/Cool/Warm/B&W by the sensor. */
+/* Every look except Normal is pixel processing (the OV2640 sensor effects were unusable). */
 bool look_is_software(look_t l);
 
 look_t look_next(look_t l);
@@ -40,3 +40,7 @@ void look_apply_rgb888(look_t l, uint8_t *rgb, int strip_w, int strip_h, int y0,
 /* Viewfinder version on a whole RGB565 image (native uint16 order). Same maths as
    look_apply_rgb888 after expanding each channel by left shift. */
 void look_apply_rgb565(look_t l, uint16_t *px, int w, int h);
+
+/* Allocate look_apply_rgb565's scratch buffer now (call at boot, before large
+   allocations, to avoid fragmenting memory later). */
+bool look_reserve_rgb565(int w, int h);

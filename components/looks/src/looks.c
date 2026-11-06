@@ -26,7 +26,31 @@ const char *look_name(look_t l)
 
 bool look_is_software(look_t l)
 {
-    return l >= LOOK_PIXEL_RED && l < LOOK_COUNT;
+    return l > LOOK_NORMAL && l < LOOK_COUNT;
+}
+
+static inline uint8_t clamp8(int v)
+{
+    return v < 0 ? 0 : (v > 255 ? 255 : (uint8_t)v);
+}
+
+/* Per-channel gains in 1/256 and offsets: cool pushes blue, warm pushes amber. */
+static void tone(uint8_t *rgb, size_t n, int gr, int gg, int gb, int ob)
+{
+    for (size_t i = 0; i < n; i++, rgb += 3) {
+        rgb[0] = clamp8((rgb[0] * gr) >> 8);
+        rgb[1] = clamp8((rgb[1] * gg) >> 8);
+        rgb[2] = clamp8(((rgb[2] * gb) >> 8) + ob);
+    }
+}
+
+static void mono(uint8_t *rgb, size_t n)
+{
+    for (size_t i = 0; i < n; i++, rgb += 3) {
+        const int y = (77 * rgb[0] + 150 * rgb[1] + 29 * rgb[2]) >> 8;
+        const uint8_t v = clamp8(((y - 128) * 300 >> 8) + 128); /* ~1.17x contrast */
+        rgb[0] = rgb[1] = rgb[2] = v;
+    }
 }
 
 look_t look_next(look_t l)
@@ -76,7 +100,14 @@ static void pixelate(const uint8_t pal[2][3], uint8_t *rgb, int w, int h, int y0
 void look_apply_rgb888(look_t l, uint8_t *rgb, int strip_w, int strip_h, int y0, int img_w,
                        int img_h)
 {
-    if (l >= LOOK_PIXEL_RED && l <= LOOK_PIXEL_GRAY) {
+    const size_t n = (size_t)strip_w * strip_h;
+    if (l == LOOK_COOL) {
+        tone(rgb, n, 218, 246, 296, 10);
+    } else if (l == LOOK_WARM) {
+        tone(rgb, n, 290, 264, 205, 0);
+    } else if (l == LOOK_BW) {
+        mono(rgb, n);
+    } else if (l >= LOOK_PIXEL_RED && l <= LOOK_PIXEL_GRAY) {
         const int b = look_pixel_block(img_w);
         assert(strip_h % b == 0 || y0 + strip_h == img_h);
         pixelate(PALETTES[l - LOOK_PIXEL_RED], rgb, strip_w, strip_h, y0, img_h, b);
@@ -85,22 +116,26 @@ void look_apply_rgb888(look_t l, uint8_t *rgb, int strip_w, int strip_h, int y0,
     }
 }
 
+static uint8_t *s_buf;
+static size_t s_cap;
+
+bool look_reserve_rgb565(int w, int h)
+{
+    const size_t need = (size_t)w * h * 3;
+    if (need > s_cap) {
+        free(s_buf);
+        s_buf = malloc(need);
+        s_cap = s_buf ? need : 0;
+    }
+    return s_buf != NULL;
+}
+
 void look_apply_rgb565(look_t l, uint16_t *px, int w, int h)
 {
-    if (!look_is_software(l)) {
+    if (!look_is_software(l) || !look_reserve_rgb565(w, h)) {
         return;
     }
-    static uint8_t *buf;
-    static size_t cap;
-    const size_t need = (size_t)w * h * 3;
-    if (need > cap) {
-        free(buf);
-        buf = malloc(need);
-        cap = buf ? need : 0;
-        if (!buf) {
-            return;
-        }
-    }
+    uint8_t *buf = s_buf;
     for (int i = 0; i < w * h; i++) {
         const uint16_t v = px[i];
         buf[i * 3 + 0] = (uint8_t)(((v >> 11) & 0x1f) << 3);
