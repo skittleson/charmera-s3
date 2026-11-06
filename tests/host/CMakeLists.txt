@@ -36,3 +36,4 @@ endfunction()
 
 add_host_test(smoke)
 add_host_test(input_logic ${REPO}/components/input/src/input_logic.c)
+add_host_test(storage_naming ${REPO}/components/storage/src/storage_naming.c)

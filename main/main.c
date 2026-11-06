@@ -1,3 +1,8 @@
+#include <stdlib.h>
+#include <string.h>
+
+#include <dirent.h>
+
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -8,6 +13,8 @@
 #include "board.h"
 #include "display.h"
 #include "input.h"
+#include "nvs_flash.h"
+#include "storage.h"
 
 static const char *TAG = "main";
 
@@ -28,6 +35,11 @@ static void corner(lv_obj_t *scr, lv_align_t align, lv_color_t colour, const cha
 void app_main(void)
 {
     ESP_LOGI(TAG, "charmera-s3 %s boot", APP_VERSION);
+    esp_err_t nerr = nvs_flash_init();
+    if (nerr == ESP_ERR_NVS_NO_FREE_PAGES || nerr == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        nvs_flash_erase();
+        nvs_flash_init();
+    }
     ESP_ERROR_CHECK(board_init());
     ESP_ERROR_CHECK(display_init());
 
@@ -45,18 +57,52 @@ void app_main(void)
         board_backlight_set(p);
         vTaskDelay(pdMS_TO_TICKS(50));
     }
-    ESP_ERROR_CHECK(input_init());
-    static const char *names[] = {"none", "PREV", "NEXT", "SHORT", "LONG", "DOUBLE"};
-    uint32_t n = 0;
     for (;;) {
-        input_event_t e = input_get(50);
-        if (e != INPUT_NONE) {
-            ESP_LOGI(TAG, "event %s", names[e]);
+        storage_state_t st = storage_status();
+        ESP_LOGI(TAG, "storage_status=%d", st);
+        if (st == STORAGE_OK) {
+            storage_info_t info;
+            if (storage_info(&info) == ESP_OK) {
+                ESP_LOGI(TAG, "total=%llu free=%llu photos=%u remaining=%u",
+                         (unsigned long long)info.total_bytes, (unsigned long long)info.free_bytes,
+                         (unsigned)info.photo_count, (unsigned)storage_photos_remaining_now());
+            }
+            static bool listed;
+            if (!listed) {
+                listed = true;
+                DIR *d = opendir(STORAGE_MOUNT);
+                struct dirent *e;
+                while (d && (e = readdir(d))) {
+                    ESP_LOGI(TAG, "root: %s", e->d_name);
+                }
+                if (d) {
+                    closedir(d);
+                }
+            }
+            static bool wrote;
+            if (!wrote) {
+                wrote = true;
+                int num = 0;
+                FILE *f = storage_begin_photo(&num);
+                if (f) {
+                    static uint8_t buf[1024];
+                    memset(buf, 0xAB, sizeof(buf));
+                    fwrite(buf, 1, sizeof(buf), f);
+                    ESP_LOGI(TAG, "commit test photo %d -> %s", num,
+                             esp_err_to_name(storage_commit_photo(f, num)));
+                    int *nums;
+                    size_t n;
+                    storage_list_photos(&nums, &n);
+                    for (size_t i = 0; i < n; i++) {
+                        ESP_LOGI(TAG, "listed %d", nums[i]);
+                    }
+                    free(nums);
+                    ESP_LOGI(TAG, "delete test photo -> %s", esp_err_to_name(storage_delete_photo(num)));
+                } else {
+                    ESP_LOGE(TAG, "begin_photo failed");
+                }
+            }
         }
-        if (++n % 5 == 0) {
-            int16_t r[3];
-            input_accel_raw(r);
-            ESP_LOGI(TAG, "accel %6d %6d %6d roll %5.1f", r[0], r[1], r[2], input_roll_deg());
-        }
+        vTaskDelay(pdMS_TO_TICKS(1500));
     }
 }
