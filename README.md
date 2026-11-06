@@ -1,75 +1,137 @@
-# Charmera-S3
+# 📸 Charmera-S3
 
-A one-button, Kodak Charmera-style digital camera for the Waveshare **ESP32-S3-LCD-2**
-(2" 240×320 screen, no touch) with an **OV5640-AF** (or the stock **OV2640**) camera and a
-microSD card. The camera is detected at boot.
+**A one-button, Kodak Charmera–style pocket camera, built from an ESP32-S3 dev board.**
 
-Hold it like a phone, with USB-C at the bottom.
+Point it at something, press the button, get a photo. Pick from 12 retro looks, browse
+your shots on the built-in screen, and pull the microSD card out when you get home.
+It boots straight into the viewfinder, with no apps, Wi-Fi or account.
 
-## Using it
+![All 12 looks, applied to the same OV5640 photo](docs/images/looks.png)
 
-| On the camera screen | |
-|---|---|
-| **Press** BOOT | take a photo (white flash, "Hold still…", then the photo freezes while it saves) |
-| **Hold** BOOT | menu: Camera / Looks / Gallery / Settings |
+<sub>Every look, applied by the firmware to one real photo from the board. What you see in the viewfinder is what lands on the card.</sub>
 
-| In menus, the gallery and settings | |
-|---|---|
-| **Press** | move down / next (older) photo |
-| **Hold** | choose / open the photo menu |
-| **Double press** | back / close |
+---
 
-- **Looks** (12): Normal, Cool Tone, Warm Tone, Black & White, Pixel Red / Yellow / Blue /
-  Gray, and Sticker, PC, Film and Charmera frames. What you see in the viewfinder is what's saved.
-- **Gallery:** newest first. Hold for Delete this / Delete all. Confirm dialogs open on Cancel.
-- **Settings:** card size, free and used space, photo count, battery, version; Brightness;
-  on-screen **Level** (off by default); Format card.
-- The screen dims after 30 s idle and turns off after 3 min. Press BOOT to wake; the waking
-  press doesn't take a photo.
-- Don't hold BOOT while plugging in or pressing RESET. That starts the chip in download mode.
+## ✨ Features
 
-## Photos
+- **Boots straight into the camera.** No mode picker on every power-up (the Charmera's #1 annoyance).
+- **12 looks:** Normal, Cool, Warm, Black & White, four duotone *Pixel* filters
+  (Red / Yellow / Blue / Gray), and four frames (Sticker, PC Window, Film Strip, Charmera).
+- **Best quality the fitted camera can give.** The camera is detected at boot:
+  - **OV5640-AF:** 1920 × 2560 portrait photos, autofocus on every shot, saved as the sensor's own JPEG for Normal.
+  - **OV2640 (stock):** 1200 × 1600 portrait photos, encoded by the firmware.
+- **The viewfinder matches the photo.** Each look is one piece of pure C shared by the live view and the photo encoder, and host tests check the two give the same result.
+- **Gallery:** newest first, step back through your shots, delete one or all, with Cancel always selected first.
+- **Settings:** card size, free/used space, photo count, battery, brightness, on-screen
+  level, and card format.
+- **Safe saves.** Every photo is written to a temporary file, synced, then renamed, so pulling the card or losing power never leaves a half-written `IMG_xxxx.JPG`.
+- **Battery-friendly.** The screen dims after 30 s and switches off after 3 min. The camera sensor only runs while the viewfinder is on screen.
+- **Standard card layout:** `DCIM/100CHARM/IMG_0001.JPG`, which any PC or photo app reads.
 
-`DCIM/100CHARM/IMG_0001.JPG`, … Numbering continues from the highest number on the card
-and never overwrites. Put the card in your PC's reader to copy them off.
+## 🎛️ One button does everything
 
-| Camera | Photo | From press to "Saved" |
+The board has no touchscreen, so everything runs on the **BOOT** button, much like the
+Charmera's tiny physical controls.
+
+| | On the camera screen | In menus, the gallery and settings |
 |---|---|---|
-| OV5640-AF | 1920×2560 portrait (stored 2560×1920 + EXIF orientation), autofocus | Normal ~4–6 s; other looks ~8–14 s |
-| OV2640 | 1200×1600 portrait | ~6–7 s |
+| **Press** | 📷 take a photo | move down / next (older) photo |
+| **Hold** (~1 s) | open the menu: *Camera · Looks · Gallery · Settings* | choose |
+| **Double press** | — | back / close |
 
-## Hardware notes
+Hold it **like a phone, USB-C at the bottom**. Turn on **Level** in Settings for a horizon
+line that turns green when the shot is straight.
 
-- **OV5640:** sensor JPEG at quality 12. Better settings (6–9) gave truncated frames
-  after the first shot or two. Autofocus runs at full resolution just before each shot.
-  Boot takes about 6 s while the AF firmware loads.
-- **Heat (OV5640):** the module runs hot and is likely meant to have a heat sink. The
-  firmware keeps it as cool as it can:
-  - The sensor is powered down whenever the viewfinder isn't on screen (gallery,
-    settings, screen off).
-  - The viewfinder runs the sensor at a third of its clock (about 7 fps; change
-    `PREVIEW_PLL_MUL` in `components/camera/camera.c`).
-  - XCLK is 20 MHz.
-  - The AF lens is released after every shot.
-- **OV2640:** its JPEG output is broken on this module and its YUV output is green, so the
-  firmware captures raw RGB565 and encodes JPEG itself.
-- Pins: `components/board/include/board.h`, `components/camera/camera.c`.
+> ⚠️ Don't hold BOOT while plugging in or pressing RESET. The chip will start in download
+> mode instead of the camera.
 
-## Build and flash
+## 🧰 Hardware
 
-Needs ESP-IDF v5.5 or later at `~/esp/esp-idf`.
+| Part | Notes |
+|---|---|
+| [Waveshare **ESP32-S3-LCD-2**](https://docs.waveshare.com/ESP32-S3-LCD-2) | ESP32-S3R8 (8 MB PSRAM), 16 MB flash, 2" 240×320 ST7789 IPS, QMI8658 IMU, TF slot, LiPo charger |
+| Camera: **OV5640-AF** (recommended) or the stock **OV2640** | 24-pin DVP ribbon. Detected automatically |
+| microSD card | FAT32. Any size the board can mount |
+| 3.7 V LiPo with MX1.25 plug (optional) | Takes the camera off the cable |
+
+> 🔥 The OV5640 module runs **hot**; it's likely meant to have a small heat sink. The
+> firmware keeps it as cool as it can:
+> - the sensor is powered down whenever the viewfinder isn't showing;
+> - the viewfinder runs the sensor at a reduced clock;
+> - the autofocus lens is released after every shot.
+
+Pin map: [`components/board/include/board.h`](components/board/include/board.h) and
+[`components/camera/camera.c`](components/camera/camera.c).
+
+## 🚀 Quick start
+
+You need **ESP-IDF v5.5 or newer**. This repo assumes it's at `~/esp/esp-idf`.
 
 ```sh
+# one-time: install ESP-IDF
+git clone -b release/v5.5 --recursive https://github.com/espressif/esp-idf.git ~/esp/esp-idf
+~/esp/esp-idf/install.sh esp32s3
+
+# build & flash
 . ~/esp/esp-idf/export.sh
-idf.py set-target esp32s3      # first time only
+idf.py set-target esp32s3        # first time only
 idf.py build
 idf.py -p /dev/ttyACM0 flash
-tools/run.sh 10                # build + flash + 10 s of serial log
 ```
 
-## Host unit tests
+Or do it all at once and watch the log:
 
-Looks, file naming, button/tilt logic and idle timing are tested on the PC with Unity:
+```sh
+tools/run.sh 10      # build + flash + 10 s of serial output
+```
+
+On Linux you need to be in the `dialout` group to use `/dev/ttyACM0`.
+
+## 🗂️ Photos
+
+| Camera | Saved as | Press → "Saved" |
+|---|---|---|
+| OV5640-AF | 2560 × 1920 JPEG + EXIF orientation, shown portrait 1920 × 2560 | Normal ~4–6 s · other looks ~8–14 s |
+| OV2640 | 1200 × 1600 portrait JPEG | ~6–7 s |
+
+Files go in `DCIM/100CHARM/`. Numbering continues from the highest file on the card and
+never overwrites. To copy photos off, put the card in a card reader.
+
+## 🔬 How it works
+
+```mermaid
+flowchart LR
+    A[BOOT press] --> B{Sensor?}
+    B -- OV5640 --> C[Autofocus at full res<br/>2560×1920 sensor JPEG]
+    B -- OV2640 --> D[Restart at 1600×1200<br/>raw RGB565]
+    C -- Normal --> S[(SD card<br/>.TMP → fsync → rename)]
+    C -- other looks --> E[Decode in strips → look → re-encode q92]
+    D --> F[Rotate in strips → look → encode q92]
+    E --> S
+    F --> S
+```
+
+Some details that took real board time to work out:
+
+- **Photos are processed in strips.** A 5 MP frame doesn't fit in RAM decoded, so photos are processed a band of rows at a time. Pixel cells and frame artwork are computed from absolute image coordinates, so strips join without seams. Host tests prove strip-by-strip equals whole-image, including in sensor orientation.
+- **The stock OV2640's JPEG output is broken on this module**, and its YUV comes out green. Its RGB565 is clean, so the firmware does its own JPEG encoding with `esp_new_jpeg`. It also carries the viewfinder's exposure into the full-resolution shot, so the photo matches what you saw.
+- **The OV5640 runs its autofocus at full resolution, just before the grab.** Running AF in the viewfinder made later full-resolution frames arrive truncated.
+- **Pixel filters adapt to the scene.** They split light and dark at the scene's average brightness, so a dim room still gives two tones instead of a solid screen.
+- **Big buffers are reserved once at boot.** Allocating per shot fragmented PSRAM until the camera's frame buffer no longer fit.
+
+The full story, including every change of plan, is in
+[`docs/superpowers/specs/2026-11-06-charmera-s3-design.md`](docs/superpowers/specs/2026-11-06-charmera-s3-design.md)
+(see the *Revision* sections at the top) and [`docs/build-decisions.md`](docs/build-decisions.md).
+
+## 🧪 Tests
+
+The pure logic builds and runs on your PC with [Unity](https://www.throwtheswitch.org/unity) (taken from your ESP-IDF install):
+
+- the 12 looks
+- strip equivalence
+- file naming
+- the button and tilt state machines
+- idle timing
 
 ```sh
 cmake -S tests/host -B tests/host/build
@@ -77,23 +139,45 @@ cmake --build tests/host/build
 ctest --test-dir tests/host/build --output-on-failure
 ```
 
-## Layout
+Results from testing on the board are in [`docs/acceptance-2026-11-06.md`](docs/acceptance-2026-11-06.md).
 
-| Path | What |
+## 🛠️ Handy tools
+
+| Tool | What it does |
 |---|---|
-| `components/board` | SPI/I2C buses, backlight, battery ADC |
-| `components/display` | ST7789 panel + LVGL |
-| `components/input` | BOOT press + motion-sensor tilt |
-| `components/storage` | SD card, DCF naming, card info, atomic writes |
-| `components/looks` | the 12 looks (pure C, host-tested) |
-| `components/camera` | OV2640 preview, full-res capture, rotation |
-| `components/pipeline` | capture → look → JPEG → card |
-| `main/ui` | camera, gallery and settings screens, menus |
-| `main/power.c` | idle dim / screen-off |
-| `tools/` | `run.sh`, serial log reader, and `dumpfiles.py` / `dump2png.py` to pull images over USB |
+| `tools/run.sh [s]` | build, flash, and print `s` seconds of the serial log |
+| `tools/serlog.py [s]` | read the serial console without resetting the board |
+| `tools/dumpfiles.py log dir` | rebuild files sent over serial as `FILE …` / `ENDFILE` blocks (pull photos off without touching the card) |
+| `tools/dump2png.py log dir` | turn RGB565 `DUMP` blocks from the log into PNGs |
 
-Not in v1: video, date stamp, USB-drive mode, Wi-Fi.
+## 📁 Project layout
 
-Design: `docs/superpowers/specs/2026-11-06-charmera-s3-design.md` ·
-Plan: `docs/superpowers/plans/2026-11-06-charmera-s3.md` ·
-Acceptance: `docs/acceptance-2026-11-06.md`
+```
+components/
+  board/      SPI + I2C buses, backlight, battery ADC
+  display/    ST7789 panel + LVGL 9 (esp_lvgl_port)
+  input/      BOOT press + tilt state machines (host-tested), QMI8658 reader
+  storage/    SD mount, DCF naming, card info, atomic writes, format
+  looks/      the 12 looks: pure C, strip-safe, host-tested
+  camera/     sensor detection, viewfinder, full-res capture, rotation, AF
+  pipeline/   capture → look → JPEG → card
+main/
+  ui/         camera, gallery, settings screens; menus and toasts
+  power.c     dim / screen-off / wake
+  settings.c  brightness, look, level (NVS)
+tests/host/   Unity tests that run on the PC
+docs/         design, plan, acceptance results, decisions, reference PDFs
+```
+
+## 🗺️ Roadmap
+
+- 🎬 Video recording. The design leaves room for a Video mode.
+- 🕒 Date stamp, with the time set over Wi-Fi.
+- 💾 USB drive mode, so photos can be copied without removing the card.
+- 🌡️ OV5640 heat: a heat sink, then maybe a faster viewfinder again.
+- Smaller items from the final review are tracked in [`docs/build-decisions.md`](docs/build-decisions.md).
+
+## ⚖️ Note
+
+This is an independent hobby project inspired by the user experience of the Kodak
+Charmera. It's not affiliated with Kodak or RETO, and the frame artwork is original.
