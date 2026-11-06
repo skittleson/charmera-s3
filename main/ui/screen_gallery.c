@@ -28,8 +28,8 @@ static struct {
 static void show_message(const char *text)
 {
     lv_label_set_text(s.msg, text);
-    lv_obj_remove_flag(s.msg, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s.img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s.msg, false);
+    lv_obj_set_hidden(s.img, true);
     lv_label_set_text(s.pos, "");
 }
 
@@ -52,13 +52,13 @@ static void show_current(void)
     if (display_lock(200)) {
         lv_label_set_text(s.pos, pos);
         if (err == ESP_OK) {
-            lv_obj_add_flag(s.msg, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(s.img, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_hidden(s.msg, true);
+            lv_obj_set_hidden(s.img, false);
             lv_obj_invalidate(s.img);
         } else {
             lv_label_set_text(s.msg, "Can't show this photo");
-            lv_obj_remove_flag(s.msg, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(s.img, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_hidden(s.msg, false);
+            lv_obj_set_hidden(s.img, true);
         }
         display_unlock();
     }
@@ -106,7 +106,7 @@ static void enter(lv_obj_t *scr)
     lv_obj_center(s.img);
     s.msg = label(scr, &lv_font_montserrat_20);
     lv_obj_center(s.msg);
-    lv_obj_add_flag(s.msg, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s.msg, true);
     s.pos = label(scr, &lv_font_montserrat_14);
     lv_obj_align(s.pos, LV_ALIGN_TOP_MID, 0, 4);
     s.hint = label(scr, &lv_font_montserrat_14);

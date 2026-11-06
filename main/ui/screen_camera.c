@@ -42,7 +42,7 @@ static struct {
 static void set_look_label(void)
 {
     lv_label_set_text(s.look, look_name(s.current));
-    lv_obj_remove_flag(s.look, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s.look, false);
     s.look_until = esp_timer_get_time() + 1500 * 1000;
 }
 
@@ -89,9 +89,9 @@ static void refresh_status(void)
         lv_label_set_text(s.battery, bat);
         if (banner) {
             lv_label_set_text(s.banner, banner);
-            lv_obj_remove_flag(s.banner, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_hidden(s.banner, false);
         } else {
-            lv_obj_add_flag(s.banner, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_hidden(s.banner, true);
         }
         display_unlock();
     }
@@ -135,11 +135,11 @@ static void enter(lv_obj_t *scr)
     s.banner = overlay_label(scr, &lv_font_montserrat_20);
     lv_obj_set_style_text_color(s.banner, UI_COLOR_ACCENT, 0);
     lv_obj_align(s.banner, LV_ALIGN_CENTER, 0, -40);
-    lv_obj_add_flag(s.banner, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s.banner, true);
 
     s.status = overlay_label(scr, &lv_font_montserrat_20);
     lv_obj_align(s.status, LV_ALIGN_BOTTOM_MID, 0, -34);
-    lv_obj_add_flag(s.status, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s.status, true);
 
     s.hint = overlay_label(scr, &lv_font_montserrat_14);
     lv_label_set_text(s.hint, "press: shoot   hold: menu");
@@ -151,7 +151,7 @@ static void enter(lv_obj_t *scr)
     lv_obj_set_size(s.level, VF_W, VF_H);
     lv_obj_set_pos(s.level, 0, 0);
     if (!settings_level()) {
-        lv_obj_add_flag(s.level, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s.level, true);
     }
 
     s.flash = lv_obj_create(scr);
@@ -159,7 +159,7 @@ static void enter(lv_obj_t *scr)
     lv_obj_set_style_bg_color(s.flash, lv_color_white(), 0);
     lv_obj_set_style_border_width(s.flash, 0, 0);
     lv_obj_set_style_radius(s.flash, 0, 0);
-    lv_obj_add_flag(s.flash, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s.flash, true);
 
     set_look_label();
 }
@@ -214,9 +214,9 @@ static void set_status(const char *text)
     if (display_lock(200)) {
         if (text) {
             lv_label_set_text(s.status, text);
-            lv_obj_remove_flag(s.status, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_hidden(s.status, false);
         } else {
-            lv_obj_add_flag(s.status, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_hidden(s.status, true);
         }
         display_unlock();
     }
@@ -254,15 +254,15 @@ static void shoot(void)
     /* Shutter feedback right away: flash, then hold the last frame while the sensor
        switches to full resolution. */
     if (display_lock(200)) {
-        lv_obj_remove_flag(s.flash, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(s.hint, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s.flash, false);
+        lv_obj_set_hidden(s.hint, true);
         display_unlock();
     }
     vTaskDelay(pdMS_TO_TICKS(120));
     if (display_lock(200)) {
-        lv_obj_add_flag(s.flash, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s.flash, true);
         lv_label_set_text(s.status, "Hold still...");
-        lv_obj_remove_flag(s.status, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s.status, false);
         display_unlock();
     }
     int number = 0;
@@ -271,7 +271,7 @@ static void shoot(void)
     set_status(NULL);
     ui_toast(pipeline_result_text(r), r == PIPE_OK ? 1000 : 2500);
     if (display_lock(200)) {
-        lv_obj_remove_flag(s.hint, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s.hint, false);
         display_unlock();
     }
     /* Presses and tilts made while saving are dropped, not replayed. */
@@ -339,7 +339,7 @@ static void tick(void)
     if (s.look_until && now > s.look_until) {
         s.look_until = 0;
         if (display_lock(200)) {
-            lv_obj_add_flag(s.look, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_hidden(s.look, true);
             display_unlock();
         }
     }

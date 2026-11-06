@@ -39,7 +39,7 @@ void ui_toast(const char *text, int ms)
         lv_obj_set_style_text_align(s_toast, LV_TEXT_ALIGN_CENTER, 0);
     }
     lv_label_set_text(s_toast, text);
-    lv_obj_remove_flag(s_toast, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_toast, false);
     lv_obj_align(s_toast, LV_ALIGN_CENTER, 0, 0);
     s_toast_until = esp_timer_get_time() + (int64_t)ms * 1000;
     if (locked) {
@@ -52,7 +52,7 @@ static void toast_tick(void)
     if (s_toast && s_toast_until && esp_timer_get_time() > s_toast_until) {
         s_toast_until = 0;
         if (display_lock(200)) {
-            lv_obj_add_flag(s_toast, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_hidden(s_toast, true);
             display_unlock();
         }
     }
@@ -207,7 +207,7 @@ static void switch_to(ui_screen_id_t id)
     lv_obj_t *old = lv_screen_active();
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, UI_COLOR_BG, 0);
-    lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(scr, false);
     s_current = SCREENS[id];
     s_current->enter(scr);
     lv_screen_load(scr);
