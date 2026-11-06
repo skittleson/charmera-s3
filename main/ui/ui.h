@@ -17,6 +17,8 @@ typedef struct {
 
 /* Pause/resume the camera viewfinder (power saving). */
 void ui_camera_freeze(bool on);
+/* Turn the camera back on if the camera screen is showing (after sleep). */
+void ui_camera_wake(void);
 
 extern const ui_screen_t ui_camera_screen;
 extern const ui_screen_t ui_gallery_screen;

@@ -28,8 +28,8 @@ static void apply(power_state_t st)
         camera_power(false);
     } else {
         if (s_state == POWER_ASLEEP) {
-            camera_power(true);
             ui_camera_freeze(false);
+            ui_camera_wake();
         }
         const int b = settings_brightness();
         board_backlight_set(st == POWER_DIM && b > DIM_PERCENT ? DIM_PERCENT : b);

@@ -49,8 +49,10 @@ static int exif_orientation(const uint8_t *b, size_t len)
     if (len < 34 || b[2] != 0xff || b[3] != 0xe1 || memcmp(b + 6, "Exif\0\0MM", 8) != 0) {
         return 0;
     }
-    if (b[20] == 0x01 && b[21] == 0x12) { /* first IFD0 entry is Orientation */
-        return b[29];
+    /* SOI(2) APP1(2) len(2) "Exif\0\0"(6) TIFF header(8) -> IFD0 entry count at 20,
+       first entry's tag at 22, its SHORT value at 30. */
+    if (b[22] == 0x01 && b[23] == 0x12) {
+        return b[31];
     }
     return 0;
 }

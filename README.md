@@ -43,6 +43,14 @@ and never overwrites. Put the card in your PC's reader to copy them off.
 - **OV5640:** sensor JPEG at quality 12. Better settings (6–9) gave truncated frames
   after the first shot or two. Autofocus runs at full resolution just before each shot.
   Boot takes about 6 s while the AF firmware loads.
+- **Heat (OV5640):** the module runs hot and is likely meant to have a heat sink. The
+  firmware keeps it as cool as it can:
+  - The sensor is powered down whenever the viewfinder isn't on screen (gallery,
+    settings, screen off).
+  - The viewfinder runs the sensor at a third of its clock (about 7 fps; change
+    `PREVIEW_PLL_MUL` in `components/camera/camera.c`).
+  - XCLK is 20 MHz.
+  - The AF lens is released after every shot.
 - **OV2640:** its JPEG output is broken on this module and its YUV output is green, so the
   firmware captures raw RGB565 and encodes JPEG itself.
 - Pins: `components/board/include/board.h`, `components/camera/camera.c`.

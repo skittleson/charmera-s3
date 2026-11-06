@@ -48,14 +48,14 @@ static const profile_t OV2640_PROFILE = {
     .jpeg = false, .xclk_hz = 16000000, .settle_frames = 1,
 };
 
-/* OV5640: 2560x1920 sensor JPEG at 24 MHz, two 1.5 MB buffers (a truncated frame is
+/* OV5640: 2560x1920 sensor JPEG at 20 MHz, two 1.5 MB buffers (a truncated frame is
    skipped instead of stalling the driver). Measured on this module: quality 6-9 works
    for the first shot or two, then every full-res frame arrives truncated; 12-14 stayed
    reliable shot after shot. So capture uses 12, and if frames ever fail it steps down
    (12 -> 15 -> 18) and stays there until reboot. */
 static const profile_t OV5640_PROFILE = {
     .name = "OV5640", .full_size = FRAMESIZE_QSXGA, .full_w = 2560, .full_h = 1920,
-    .jpeg = true, .jpeg_quality = 12, .jpeg_buf = 1536 * 1024, .xclk_hz = 24000000,
+    .jpeg = true, .jpeg_quality = 12, .jpeg_buf = 1536 * 1024, .xclk_hz = 20000000,
     .settle_frames = 2,
 };
 
@@ -64,6 +64,7 @@ static const char *TAG = "camera";
 static const profile_t *s_prof;
 static sensor_t *s_sensor;
 static bool s_has_af;
+static bool s_active = true; /* sensor powered and streaming */
 static uint16_t *s_preview;
 static uint16_t *s_land; /* 320x240 decoded JPEG preview (OV5640) */
 static jpeg_dec_handle_t s_prev_dec;
@@ -128,6 +129,20 @@ static esp_err_t start(framesize_t size, pixformat_t fmt, int xclk, int quality,
     return ESP_OK;
 }
 
+#ifndef PREVIEW_PLL_MUL
+#define PREVIEW_PLL_MUL 60
+#endif
+
+/* OV5640 viewfinder: the driver programs the PLL for full speed even at 320x240,
+   which keeps the sensor hot. A third of that still gives a usable frame rate. */
+static void preview_low_power(void)
+{
+    if (s_sensor && s_prof && s_prof->jpeg && s_sensor->set_pll) {
+        /* bypass, multiplier, sys_div, root_2x, pre_div, seld5, pclk_manual, pclk_div */
+        s_sensor->set_pll(s_sensor, 0, PREVIEW_PLL_MUL, 4, 0, 2, 2, 1, 4);
+    }
+}
+
 static void stop(void)
 {
     s_sensor = NULL;
@@ -176,6 +191,7 @@ esp_err_t camera_init(void)
             return err;
         }
         s_sensor->set_framesize(s_sensor, FRAMESIZE_QVGA);
+        preview_low_power();
         s_land = jpeg_calloc_align(320 * 240 * 2, 16);
         jpeg_dec_config_t dc = DEFAULT_JPEG_DEC_CONFIG();
         dc.output_type = JPEG_PIXEL_FORMAT_RGB565_LE;
@@ -281,7 +297,7 @@ static bool decode_320x240(const uint8_t *buf, size_t len, int w, int h, uint16_
 
 uint16_t *camera_preview_frame(void)
 {
-    if (!s_sensor) {
+    if (!s_sensor || !s_active) {
         return NULL;
     }
     camera_fb_t *fb = esp_camera_fb_get();
@@ -417,6 +433,17 @@ static bool frame_ok(const camera_fb_t *fb)
     return fb->len >= (size_t)s_prof->full_w * s_prof->full_h * 2;
 }
 
+/* Let the lens go back to rest. The AF voice-coil draws current for as long as it
+   holds a focus position, which made the module run hot. */
+static void af_release(void)
+{
+#if CONFIG_CAMERA_AF_SUPPORT
+    if (s_has_af && s_sensor) {
+        s_sensor->set_reg(s_sensor, 0x3022, 0xff, 0x08); /* AF firmware: release focus */
+    }
+#endif
+}
+
 /* Single autofocus, run at full resolution right before the grab. */
 static void af_single_full(void)
 {
@@ -445,7 +472,7 @@ static void af_single_full(void)
 
 camera_fb_t *camera_capture_full(void)
 {
-    if (!s_sensor) {
+    if (!s_sensor || !s_active) {
         return NULL;
     }
     if (s_prof->jpeg) {
@@ -502,7 +529,9 @@ void camera_capture_done(camera_fb_t *fb)
     }
     if (s_prof->jpeg) {
         if (s_sensor) {
+            af_release();
             s_sensor->set_framesize(s_sensor, FRAMESIZE_QVGA);
+            preview_low_power();
             drop_frames(1);
         }
         return;
@@ -513,11 +542,24 @@ void camera_capture_done(camera_fb_t *fb)
 
 void camera_power(bool on)
 {
-    if (!s_sensor) {
+    if (!s_sensor || on == s_active) {
         return;
     }
-    gpio_set_level(PIN_PWDN, on ? 0 : 1);
-    if (on) {
-        vTaskDelay(pdMS_TO_TICKS(50));
+    if (!on) {
+        af_release();
+        gpio_set_level(PIN_PWDN, 1); /* sensor power-down: stops streaming, low current */
+        s_active = false;
+        ESP_LOGI(TAG, "camera off");
+        return;
     }
+    gpio_set_level(PIN_PWDN, 0);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    s_active = true;
+    drop_frames(s_prof ? s_prof->settle_frames : 1);
+    ESP_LOGI(TAG, "camera on");
+}
+
+bool camera_is_on(void)
+{
+    return s_active;
 }

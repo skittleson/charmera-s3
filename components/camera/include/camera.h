@@ -47,7 +47,10 @@ esp_err_t camera_focus(uint32_t timeout_ms);
 camera_fb_t *camera_capture_full(void);
 void camera_capture_done(camera_fb_t *fb);
 
+/* Power the sensor up or down (PWDN). Off = no streaming, lens released. The UI keeps
+   it on only while the viewfinder is on screen. */
 void camera_power(bool on);
+bool camera_is_on(void);
 
 /* Raw (OV2640) captures: rows [y0, y0+rows) of the upright portrait photo as RGB888. */
 void camera_photo_rows_rgb888(const camera_fb_t *fb, int y0, int rows, uint8_t *out);

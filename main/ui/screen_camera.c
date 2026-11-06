@@ -123,6 +123,7 @@ static void enter(lv_obj_t *scr)
     ui_camera_reserve();
     memset(&s, 0, sizeof(s));
     s.current = settings_look();
+    camera_power(true);
     camera_set_look(s.current);
 
     s.img = lv_image_create(scr);
@@ -171,6 +172,7 @@ static void enter(lv_obj_t *scr)
 
 static void leave(void)
 {
+    camera_power(false); /* nothing to show: don't run the sensor */
 }
 
 /* Horizon line through the centre, counter-rotated by the camera's roll so it stays
@@ -202,6 +204,14 @@ static void viewfinder_step(void)
         return;
     }
     uint16_t *f = camera_preview_frame();
+    static int fps_n;
+    static int64_t fps_t;
+    if (f && ++fps_n == 30) {
+        const int64_t now = esp_timer_get_time();
+        ESP_LOGD(TAG, "viewfinder %.1f fps", 30e6 / (double)(now - fps_t));
+        fps_t = now;
+        fps_n = 0;
+    }
     if (!f) {
         vTaskDelay(pdMS_TO_TICKS(20)); /* no camera: don't spin the UI task */
         return;
@@ -359,6 +369,7 @@ void ui_camera_freeze(bool on)
 {
     s.frozen = on;
 }
+
 
 const ui_screen_t ui_camera_screen = {
     .enter = enter,

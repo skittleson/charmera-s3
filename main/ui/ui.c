@@ -7,6 +7,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "camera.h"
 #include "power.h"
 
 static const char *TAG = "ui";
@@ -221,6 +222,13 @@ static void switch_to(ui_screen_id_t id)
 void ui_show(ui_screen_id_t id)
 {
     s_pending = id;
+}
+
+void ui_camera_wake(void)
+{
+    if (s_current == &ui_camera_screen) {
+        camera_power(true);
+    }
 }
 
 void ui_note_activity(void)
