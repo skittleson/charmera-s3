@@ -1,38 +1,41 @@
 # Charmera-S3 — Design
 
 **Date:** 2026-11-06
-**Status:** Approved 2026-11-06 (owner said "proceed"; calls 12–14 are designer defaults)
+**Status:** Approved 2026-11-06 (owner said "proceed"; calls 12–14 are designer defaults).
+**Revised 2026-11-06:** the board has **no touchscreen**. Controls are the BOOT button + tilt (owner approved).
 
 ## Intent
 
-Turn a Waveshare **ESP32-S3-Touch-LCD-2** with an **OV5640** camera into a small
+Turn a Waveshare **ESP32-S3-LCD-2** (no touch) with an **OV5640** camera into a small
 handheld digital camera that *feels like a Kodak Charmera* to use. The Charmera's
 user experience — pick a look, press the shutter, flip back through shots — is the
 thing to copy. Its specs are not: the owner wants **the best image quality the
 hardware can give**.
 
-The touchscreen replaces the Charmera's physical buttons.
+There is no touchscreen. The BOOT button plus tilting the camera (via the on-board motion
+sensor) replace the Charmera's physical buttons.
 
 Reference material in this repo:
 - `docs/reference/kodak-charmera-quick-start.pdf` — Kodak's official quick start guide
   (source for the Charmera flow below)
-- `docs/reference/ESP32-S3-Touch-LCD-2_V2-schematic.pdf` — board schematic
+- `docs/reference/ESP32-S3-Touch-LCD-2_V2-schematic.pdf` — schematic of the touch sibling board
+  (same pin-out for everything this project uses)
 
 ## Goals (v1)
 
-1. **Take a photo.** Live viewfinder → tap shutter → JPEG saved to the SD card.
+1. **Take a photo.** Live viewfinder → press BOOT → JPEG saved to the SD card.
 2. **Browse photos.** Gallery of what's on the card; step forward/back; delete.
 3. **Settings.** SD card total size + free space, number of photos, format card
    (with confirmation), plus small device settings (see below).
 4. **Charmera looks.** The 12-ish selectable "looks" (filters + frames) the Charmera
-   offers, chosen by swiping in the viewfinder. What you see in the viewfinder is
+   offers, chosen by tilting the camera left/right in the viewfinder. What you see in the viewfinder is
    what lands on the card.
 5. **Best quality.** Photos at the OV5640's full 5 MP (2592×1944).
 
 ## Secondary goal (not v1, but design for it)
 
 - **Video recording.** The mode structure must leave a clean slot for a Video mode
-  (tap shutter to start/stop, file saved to the card). Do not build it in v1; do not
+  (press shutter to start/stop, file saved to the card). Do not build it in v1; do not
   paint the architecture into a corner that prevents it (e.g. camera ownership should
   sit behind one module that a video recorder could also use).
 
@@ -57,22 +60,23 @@ Reference material in this repo:
 
 ## Hardware (confirmed)
 
-Board: **Waveshare ESP32-S3-Touch-LCD-2** (verified over USB: ESP32-S3 rev v0.2,
+Board: **Waveshare ESP32-S3-LCD-2**, the non-touch version (verified over USB: ESP32-S3 rev v0.2,
 16 MB flash, 8 MB octal PSRAM, native USB-Serial/JTAG on `/dev/ttyACM0`).
 
-Pin map, taken from Waveshare's own ESP-IDF demos for this board
-(`ESP32-S3-Touch-LCD-2-Demo.zip`, examples 01/04/05/06):
+Pin map, taken from Waveshare's ESP-IDF demos for the touch sibling board
+(`ESP32-S3-Touch-LCD-2-Demo.zip`, examples 01/04/05/06); display, I2C and battery pins were
+confirmed on this board:
 
 | Function | Pins / details |
 |---|---|
 | Shared SPI bus (SPI2_HOST) | SCLK 39, MOSI 38, MISO 40 |
 | LCD ST7789, 240×320, SPI 80 MHz | CS 45, DC 42, RST none, backlight 1 (LEDC PWM); `invert_color=true`, RGB order RGB, 16 bpp, LVGL needs 16-bit color swap |
 | SD card (SPI mode, same bus) | CS 41 |
-| I2C bus 0 (400 kHz) | SDA 48, SCL 47 — CST816D touch (driver `esp_lcd_touch_cst816s`), QMI8658 IMU |
-| Touch | no INT / RST wired in Waveshare's demo (poll) |
+| I2C bus 0 (400 kHz) | SDA 48, SCL 47 — QMI8658 IMU at 0x6B (only device on the bus) |
+| Touch | **none** on this board |
 | OV5640 (DVP) | XCLK 8 (20 MHz), SIOD 21, SIOC 16, D0–D7 = 12,13,15,11,14,10,7,2, VSYNC 6, HREF 4, PCLK 9, PWDN 17, RESET none |
 | Battery voltage | ADC1 channel 4, divider ×3 |
-| Buttons | BOOT (GPIO0), RESET |
+| Buttons | BOOT (GPIO0, active low; holding it during reset enters download mode), RESET |
 
 Note: the LCD and SD card share one SPI bus. Display flushes and file writes must be
 serialized (bus locking), and long SD writes will pause the screen briefly.
@@ -92,41 +96,57 @@ what matter.
 ## The experience
 
 The UI is **landscape, 320×240**, matching the camera's 4:3 frame and the Charmera's
-horizontal body. *(Builder's call recorded by designer — see "Calls made".)*
+horizontal body, held with the **USB-C port on the right** (confirmed on the board).
 
-### Mapping the Charmera to touch
+### Controls (owner approved)
 
-| Charmera (buttons) | Charmera-S3 (touch) |
+Two inputs only:
+
+- **Tilt** (QMI8658): roll the camera left or right past ~30° and hold briefly
+  (~250 ms) = **previous / next**. Held tilt auto-repeats (~every 600 ms). Must return
+  near level (< ~15°) to re-arm. Ordinary hand wobble while framing never triggers it.
+- **BOOT button:**
+  - **short press** = shutter (camera screen) / OK / select (menus)
+  - **long press** (≥ ~800 ms) = open menu
+  - **double press** (two presses within ~350 ms) = back / cancel
+
+| Charmera (buttons) | Charmera-S3 |
 |---|---|
 | Hold power 3 s, pick Photo/Video/Settings icon every boot | Boots straight into the **Camera** screen |
-| Up/Down cycles filters & frames | **Swipe left/right** on the viewfinder; look name shown briefly |
-| Shutter button, flash + shutter sound | Big on-screen **shutter button**; white screen flash + brief "saved" confirmation |
-| Top-right shows photos remaining | Top-right shows **photos remaining** (estimated from free space) |
-| Play button → playback | **Gallery** button on the camera screen |
-| Up/Down to step through files | **Swipe** left/right between photos |
-| Long-press Play → delete current / delete all | **Long-press** photo → delete this / delete all, with confirm |
-| On/Off acts as "back" | A **back** control on every non-camera screen |
-| Auto power-off after 3 min idle | Dim, then screen off after 3 min idle; tap (or BOOT) wakes |
+| Up/Down cycles filters & frames | **Tilt** left/right; look name shown briefly |
+| Shutter button, flash + shutter sound | **Short press**; white screen flash + brief "Saved" |
+| Top-right shows photos remaining | Top-right shows **photos remaining** |
+| On/Off button → mode icons | **Long press** → menu with Camera / Gallery / Settings icons; tilt to highlight, short press to pick |
+| Up/Down to step through files | **Tilt** between photos |
+| Long-press Play → delete current / delete all | **Long press** in gallery → Delete this / Delete all / Cancel |
+| On/Off acts as "back" | **Double press** = back, from anywhere |
+| Auto power-off after 3 min idle | Dim, then screen off after 3 min idle; **BOOT** wakes (tilt does not) |
+
+Confirmation dialogs (delete, format) always open with **Cancel** highlighted; tilt to
+move to the action, short press to choose. On-screen hints show what the button does
+on each screen (e.g. "● shoot   ● hold: menu").
 
 ### Screens
 
 **1. Camera (home)**
 - Full-screen live viewfinder with the current look applied in real time.
 - Overlays: photos remaining (top-right), battery level, current look name (fades
-  after a swipe), gallery button, settings button, shutter button.
+  after a tilt), a small control hint.
 - No card / card full / card error → clear message on the viewfinder; shutter
   disabled. (The Charmera can hold 2 shots without a card; we don't need that.)
 - Shutter: freeze frame, white flash, save, "Saved" toast, back to live view. The
   owner must always see that the camera is busy while a full-res photo is saved.
 
 **2. Gallery**
-- Opens on the newest photo. Swipe for older/newer. Shows "12 / 87" position.
-- Long-press → delete this photo / delete all photos → confirm.
+- Opens on the newest photo. Tilt for older/newer. Shows "12 / 87" position.
+- Long press → Delete this / Delete all / Cancel → confirm.
 - Empty card → friendly "No photos yet".
 - Photos are shown scaled to fit 320×240 (decode a downscaled preview; never try to
   hold a full 5 MP decode in RAM).
 
 **3. Settings**
+- A list; tilt moves the highlight, short press activates. Brightness: press, tilt to
+  adjust, press to finish.
 - SD card: total size, free space, used space.
 - Number of photos on the card.
 - **Format card** → "This erases every photo. Format?" → confirm → progress → done.
@@ -216,17 +236,19 @@ Brightness and last-used look are stored in NVS and survive reboots.
 
 ## Idle / power
 
-Touch has no interrupt line, so tap-to-wake means the chip stays awake. Design:
-after ~30 s idle dim the backlight; after 3 min turn the backlight off and power down
-the camera (PWDN pin), keep polling touch slowly; tap or BOOT wakes back into the live
-viewfinder. No deep sleep in v1. *(Designer's call: instant wake over battery life.)*
+After ~30 s with no button press or tilt step, dim the backlight; after 3 min turn the
+backlight off and power down the camera (PWDN pin). A **BOOT press** wakes back into
+the live viewfinder (the waking press does nothing else). Tilt never wakes it, so it
+can't wake in a pocket. No deep sleep in v1. *(Designer's call: instant wake.)*
 
 ## Architecture (guidance)
 
 Small modules with one job each, for example:
 
 - `board` — pins, SPI/I2C bus setup, backlight, battery ADC
-- `display` + `touch` — panel + LVGL port
+- `display` — panel + LVGL port
+- `input` — BOOT press classifier (short / long / double) + tilt classifier; pure
+  state machines (host-testable) fed by a GPIO poll and IMU reads
 - `camera` — owns the sensor; preview mode, still capture; later also video
 - `looks` — pure pixel filters + frame drawing (host-testable)
 - `pipeline` — strip decode → look → encode → file
@@ -238,12 +260,13 @@ Small modules with one job each, for example:
 
 - **Host unit tests** (ESP-IDF linux target or plain CMake + Unity) for: each look on
   small synthetic buffers, file-number allocation, "photos remaining" maths, strip
-  boundary handling (no seams between strips).
+  boundary handling (no seams between strips), button press classification and tilt
+  stepping/re-arm/auto-repeat.
 - **On-device checks** on the real board for each milestone: flash, open serial
   monitor, exercise the screen.
 - **Acceptance (v1 done when):**
   1. Boots straight into a live viewfinder in a few seconds.
-  2. Tapping the shutter saves a 2592×1944 JPEG to `/DCIM/100CHARM/`, readable on
+  2. Pressing the shutter saves a 2592×1944 JPEG to `/DCIM/100CHARM/`, readable on
      the PC.
   3. Every look shows live and the saved photo matches it, with no visible strip seams.
   4. Gallery browses and deletes photos correctly.
@@ -258,12 +281,12 @@ Small modules with one job each, for example:
    a best-quality camera needs an untouched option).
 3. **Frames are original artwork,** no Kodak logos.
 4. **No shutter sound** (no speaker on the board); a visual flash replaces it.
-5. **Idle behaviour:** dim, then screen off after 3 minutes; wake on tap/BOOT.
+5. **Idle behaviour:** dim, then screen off after 3 minutes; wake on BOOT only.
 6. **File layout** `DCIM/100CHARM/IMG_####.JPG`.
 7. **Brightness and battery** added to Settings (cheap, useful).
 8. **Cool/Warm/B&W done by the sensor**, so they save at full quality as fast as Normal.
 9. **Gallery/delete-all scoped** to the camera's own folder.
-10. **No deep sleep;** screen-off + camera power-down, tap to wake.
+10. **No deep sleep;** screen-off + camera power-down, BOOT to wake.
 11. **Wrong-way sensor** handled with EXIF orientation, not pixel rotation.
 12. **Saving blocks.** Software looks show a "Saving…" indicator and the shutter
     waits until the file is safely written. No background save queue in v1.
@@ -274,6 +297,10 @@ Small modules with one job each, for example:
     real board in milestone 1; if it's a selfie-facing mount, mirror the viewfinder.
 
 ## Left to the builder
+
+- Exact tilt/press thresholds and timings (values above are starting points; tune on
+  the board for a deliberate-but-easy feel). Which IMU axis is "roll" for the
+  landscape, USB-right grip.
 
 - LVGL 8 vs 9; exact widget styling and frame artwork.
 - JPEG decode/encode libraries for the strip pipeline (e.g. `esp_new_jpeg`, TJpgDec).
