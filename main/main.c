@@ -7,6 +7,7 @@
 #include "app_version.h"
 #include "board.h"
 #include "display.h"
+#include "input.h"
 
 static const char *TAG = "main";
 
@@ -44,7 +45,18 @@ void app_main(void)
         board_backlight_set(p);
         vTaskDelay(pdMS_TO_TICKS(50));
     }
+    ESP_ERROR_CHECK(input_init());
+    static const char *names[] = {"none", "PREV", "NEXT", "SHORT", "LONG", "DOUBLE"};
+    uint32_t n = 0;
     for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        input_event_t e = input_get(50);
+        if (e != INPUT_NONE) {
+            ESP_LOGI(TAG, "event %s", names[e]);
+        }
+        if (++n % 5 == 0) {
+            int16_t r[3];
+            input_accel_raw(r);
+            ESP_LOGI(TAG, "accel %6d %6d %6d roll %5.1f", r[0], r[1], r[2], input_roll_deg());
+        }
     }
 }

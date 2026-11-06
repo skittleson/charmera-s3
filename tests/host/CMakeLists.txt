@@ -27,6 +27,7 @@ function(add_host_test name)
     add_executable(test_${name} test_${name}.c ${ARGN})
     target_include_directories(test_${name} PRIVATE
         ${REPO}/components/storage/include
+        ${REPO}/components/input/include
         ${REPO}/components/looks/include)
     target_compile_options(test_${name} PRIVATE -Wall -Wextra -Werror)
     target_link_libraries(test_${name} PRIVATE unity m)
@@ -34,3 +35,4 @@ function(add_host_test name)
 endfunction()
 
 add_host_test(smoke)
+add_host_test(input_logic ${REPO}/components/input/src/input_logic.c)
