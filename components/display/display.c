@@ -8,11 +8,10 @@
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
 
-/* The panel is 240x320 portrait; we drive it as 320x240 landscape, held with USB-C on
-   the right (verified on the board). */
-#define LANDSCAPE_SWAP_XY  true
-#define LANDSCAPE_MIRROR_X true
-#define LANDSCAPE_MIRROR_Y false
+/* Portrait 240x320, held with USB-C at the bottom. */
+#define ORIENT_SWAP_XY  false
+#define ORIENT_MIRROR_X false
+#define ORIENT_MIRROR_Y false
 
 #define LCD_PIXEL_CLOCK_HZ (80 * 1000 * 1000)
 #define DRAW_BUF_LINES     40
@@ -73,9 +72,9 @@ esp_err_t display_init(void)
         .monochrome = false,
         .color_format = LV_COLOR_FORMAT_RGB565,
         .rotation = {
-            .swap_xy = LANDSCAPE_SWAP_XY,
-            .mirror_x = LANDSCAPE_MIRROR_X,
-            .mirror_y = LANDSCAPE_MIRROR_Y,
+            .swap_xy = ORIENT_SWAP_XY,
+            .mirror_x = ORIENT_MIRROR_X,
+            .mirror_y = ORIENT_MIRROR_Y,
         },
         .flags = {
             .buff_dma = true,

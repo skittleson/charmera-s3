@@ -4,6 +4,23 @@
 **Status:** Approved 2026-11-06 (owner said "proceed"; calls 12–14 are designer defaults).
 **Revised 2026-11-06:** the board has **no touchscreen**. Controls are the BOOT button + tilt (owner approved).
 
+## Revision 2 (hardware findings, owner approved) — overrides anything below
+
+- **Camera is an OV2640 (2 MP), not an OV5640.** "Best quality" = **1600×1200** sensor
+  frames. Code detects an OV5640 and would use 2592×1944 if one is fitted.
+- **This OV2640's JPEG output is broken** (NO-SOI at every clock/size) and its YUV422 is
+  green-tinted; **RGB565 is clean**. Preview and capture are both RGB565, and the
+  firmware encodes JPEG itself (`esp_new_jpeg`). There is no "sensor JPEG straight to
+  card" path.
+- **Grip is portrait, USB-C at the bottom** (owner's choice after seeing it). UI is
+  **240×320 portrait**. The sensor's long axis runs top-to-bottom in this grip, so the
+  viewfinder fills the screen and **photos are portrait 1200×1600**, rotated in firmware
+  (not with an EXIF tag).
+- Raw-mode frame buffers can't change size, so the camera is re-initialised at full size
+  for each shot and back to 320×240 after (~3 s capture). The UI must cover this with
+  instant feedback (freeze frame + flash at the press).
+- No autofocus (OV2640).
+
 ## Intent
 
 Turn a Waveshare **ESP32-S3-LCD-2** (no touch) with an **OV5640** camera into a small

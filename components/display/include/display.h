@@ -4,7 +4,7 @@
 
 #include "esp_err.h"
 
-/* ST7789 panel + CST816D touch + LVGL, landscape 320x240. Call after board_init(). */
+/* ST7789 panel + CST816D touch + LVGL, portrait 240x320. Call after board_init(). */
 esp_err_t display_init(void);
 
 /* Guard every LVGL call made outside LVGL callbacks. */

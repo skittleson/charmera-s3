@@ -5,8 +5,9 @@
 #include "driver/i2c_master.h"
 #include "esp_err.h"
 
-#define BOARD_LCD_W 320
-#define BOARD_LCD_H 240
+/* Portrait UI, held with USB-C at the bottom. */
+#define BOARD_LCD_W 240
+#define BOARD_LCD_H 320
 
 /* Pins (Waveshare ESP32-S3-Touch-LCD-2) */
 #define BOARD_SPI_HOST      SPI2_HOST
