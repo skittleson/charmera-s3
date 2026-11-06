@@ -1,0 +1,36 @@
+cmake_minimum_required(VERSION 3.16)
+project(charmera_host_tests C)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
+if(DEFINED ENV{IDF_PATH})
+    set(IDF_DIR $ENV{IDF_PATH})
+else()
+    set(IDF_DIR $ENV{HOME}/esp/esp-idf)
+endif()
+set(UNITY_DIR ${IDF_DIR}/components/unity/unity/src)
+if(NOT EXISTS ${UNITY_DIR}/unity.c)
+    message(FATAL_ERROR "Unity not found at ${UNITY_DIR}; set IDF_PATH")
+endif()
+
+set(REPO ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+
+add_library(unity STATIC ${UNITY_DIR}/unity.c)
+target_include_directories(unity PUBLIC ${UNITY_DIR})
+
+enable_testing()
+
+# add_host_test(<name> <extra sources...>) builds test_<name>.c plus the given
+# pure-C sources (no ESP-IDF includes) and registers it with CTest.
+function(add_host_test name)
+    add_executable(test_${name} test_${name}.c ${ARGN})
+    target_include_directories(test_${name} PRIVATE
+        ${REPO}/components/storage/include
+        ${REPO}/components/looks/include)
+    target_compile_options(test_${name} PRIVATE -Wall -Wextra -Werror)
+    target_link_libraries(test_${name} PRIVATE unity m)
+    add_test(NAME ${name} COMMAND test_${name})
+endfunction()
+
+add_host_test(smoke)
