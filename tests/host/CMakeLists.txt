@@ -26,6 +26,7 @@ enable_testing()
 function(add_host_test name)
     add_executable(test_${name} test_${name}.c ${ARGN})
     target_include_directories(test_${name} PRIVATE
+        ${REPO}/components/looks/src
         ${REPO}/components/storage/include
         ${REPO}/components/input/include
         ${REPO}/components/looks/include)
@@ -37,3 +38,4 @@ endfunction()
 add_host_test(smoke)
 add_host_test(input_logic ${REPO}/components/input/src/input_logic.c)
 add_host_test(storage_naming ${REPO}/components/storage/src/storage_naming.c)
+add_host_test(looks ${REPO}/components/looks/src/looks.c ${REPO}/components/looks/src/frames.c)
