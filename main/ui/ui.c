@@ -265,6 +265,12 @@ static void ui_task(void *arg)
     }
 }
 
+void ui_reserve(void)
+{
+    ui_camera_reserve();
+    ui_gallery_reserve();
+}
+
 void ui_start(void)
 {
     xTaskCreatePinnedToCore(ui_task, "ui", 8192, NULL, 5, NULL, 0);

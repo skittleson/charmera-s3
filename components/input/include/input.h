@@ -12,7 +12,8 @@ esp_err_t input_init(void);
 /* Next input event, waiting up to timeout_ms. INPUT_NONE on timeout. */
 input_event_t input_get(uint32_t timeout_ms);
 
-/* Drop any queued events (e.g. after a long save). */
+/* Drop queued events and any press in progress (e.g. after a long save). The button
+   is ignored until released. */
 void input_flush(void);
 
 void input_set_tilt_enabled(bool on);

@@ -26,10 +26,13 @@ void app_main(void)
     ESP_ERROR_CHECK(board_init());
     ESP_ERROR_CHECK(display_init());
     ESP_ERROR_CHECK(input_init());
-    ESP_ERROR_CHECK(pipeline_init());
+    /* The camera is detected first: the pipeline sizes its buffers for it. */
     if (camera_init() != ESP_OK) {
         ESP_LOGE(TAG, "camera not found");
     }
+    ESP_LOGI(TAG, "camera: %s", camera_sensor_name());
+    ESP_ERROR_CHECK(pipeline_init());
+    ui_reserve();
     storage_status();
     power_init();
     ui_start();

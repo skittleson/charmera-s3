@@ -4,10 +4,26 @@
 **Status:** Approved 2026-11-06 (owner said "proceed"; calls 12–14 are designer defaults).
 **Revised 2026-11-06:** the board has **no touchscreen**. Controls are the BOOT button + tilt (owner approved).
 
+## Revision 3 (owner fitted an OV5640-AF) — overrides revision 2 where they differ
+
+- **The camera is detected at boot** and each sensor gets its best mode:
+  - **OV5640 (AF):** 2560×1920 sensor JPEG, autofocus before every shot, saved
+    untouched for Normal (EXIF orientation 8 so viewers show it portrait 1920×2560).
+    Other looks decode the sensor JPEG in strips, apply the look in sensor orientation
+    and re-encode at q92, with the same EXIF tag.
+  - **OV2640:** as in revision 2 (raw RGB565 1600×1200 → rotated 1200×1600 firmware JPEG).
+- OV5640 JPEG quality 12 (esp32-camera scale): 6–9 worked for one or two shots and then
+  every full-res frame came truncated; 12 stayed reliable. On a truncated frame the
+  quality steps down (15, 18) for the rest of the session.
+- Single AF runs at full resolution right before the grab (~1.2 s). AF in the
+  viewfinder (single or continuous) broke later full-res switches.
+- Boot is ~6.4 s with the OV5640 (AF firmware upload ~4.7 s).
+
 ## Revision 2 (hardware findings, owner approved) — overrides anything below
 
 - **Camera is an OV2640 (2 MP), not an OV5640.** "Best quality" = **1600×1200** sensor
-  frames. Code detects an OV5640 and would use 2592×1944 if one is fitted.
+  frames. An OV5640 would also be captured at 1600×1200: a 5 MP RGB565 frame (10 MB)
+  doesn't fit in the 8 MB PSRAM.
 - **This OV2640's JPEG output is broken** (NO-SOI at every clock/size) and its YUV422 is
   green-tinted; **RGB565 is clean**. Preview and capture are both RGB565, and the
   firmware encodes JPEG itself (`esp_new_jpeg`). There is no "sensor JPEG straight to

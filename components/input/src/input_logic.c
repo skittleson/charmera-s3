@@ -8,8 +8,22 @@ void btn_init(btn_state_t *s)
     memset(s, 0, sizeof(*s));
 }
 
+void btn_suppress(btn_state_t *s)
+{
+    s->presses = 0;
+    s->long_fired = false;
+    s->suppressed = s->down;
+    s->down = false;
+}
+
 input_event_t btn_update(btn_state_t *s, bool pressed, uint32_t now_ms)
 {
+    if (s->suppressed) {
+        if (!pressed) {
+            s->suppressed = false;
+        }
+        return INPUT_NONE;
+    }
     if (pressed && !s->down) {
         s->down = true;
         s->down_at = now_ms;

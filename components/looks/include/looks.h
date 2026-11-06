@@ -27,7 +27,7 @@ bool look_is_software(look_t l);
 look_t look_next(look_t l);
 look_t look_prev(look_t l);
 
-/* Pixel-filter cell size for an image this wide: img_w / 80, at least 4. */
+/* Pixel-filter cell size for an image this wide: img_w / 80 (80 cells across), at least 2. */
 int look_pixel_block(int img_w);
 
 /* Apply a look to a horizontal strip of an RGB888 image. The strip is strip_w x strip_h
@@ -36,6 +36,15 @@ int look_pixel_block(int img_w);
    strip by strip gives exactly the same result as applying to the whole image. */
 void look_apply_rgb888(look_t l, uint8_t *rgb, int strip_w, int strip_h, int y0, int img_w,
                        int img_h);
+
+/* Same look, but on a strip of the photo in sensor orientation: the image is
+   sensor_w x sensor_h (landscape) and is shown as portrait, where portrait pixel
+   (px, py) = sensor pixel (sensor_w - 1 - py, px). The strip is rows [y0, y0+rows) of
+   the sensor image; y0 and rows follow the same multiple-of-cell rule using
+   look_pixel_block(sensor_h). The result, once rotated, equals look_apply_rgb888 on the
+   portrait image. */
+void look_apply_rgb888_sensor(look_t l, uint8_t *rgb, int sensor_w, int rows, int y0, int img_sensor_w,
+                              int img_sensor_h);
 
 /* Viewfinder version on a whole RGB565 image (native uint16 order). Same maths as
    look_apply_rgb888 after expanding each channel by left shift. */

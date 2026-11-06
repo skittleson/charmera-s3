@@ -91,8 +91,9 @@ int look_mean_luma_rgb565(const uint16_t *px, int n)
 
 int look_pixel_block(int img_w)
 {
+    /* 80 cells across at every size, so the viewfinder and the photo match. */
     int b = img_w / 80;
-    return b < 4 ? 4 : b;
+    return b < 2 ? 2 : b;
 }
 
 static void pixelate(const uint8_t pal[2][3], uint8_t *rgb, int w, int h, int y0, int img_h, int b)
@@ -154,6 +155,56 @@ bool look_reserve_rgb565(int w, int h)
         s_cap = s_buf ? need : 0;
     }
     return s_buf != NULL;
+}
+
+/* Pixel cells for a sensor-orientation strip. Portrait columns are sensor rows (cells
+   start at row 0); portrait rows run right-to-left across the sensor (cells start at
+   the sensor's right edge). */
+static void pixelate_sensor(const uint8_t pal[2][3], uint8_t *rgb, int w, int h, int b)
+{
+    for (int cy = 0; cy < h; cy += b) {
+        const int ch = (cy + b <= h) ? b : h - cy;
+        for (int right = w; right > 0; right -= b) {
+            const int cx = right - b > 0 ? right - b : 0;
+            const int cw = right - cx;
+            uint32_t sum = 0;
+            for (int y = cy; y < cy + ch; y++) {
+                const uint8_t *p = rgb + ((size_t)y * w + cx) * 3;
+                for (int x = 0; x < cw; x++, p += 3) {
+                    sum += (77u * p[0] + 150u * p[1] + 29u * p[2]) >> 8;
+                }
+            }
+            const uint8_t *c = pal[(int)(sum / (uint32_t)(cw * ch)) >= s_threshold ? 1 : 0];
+            for (int y = cy; y < cy + ch; y++) {
+                uint8_t *p = rgb + ((size_t)y * w + cx) * 3;
+                for (int x = 0; x < cw; x++, p += 3) {
+                    p[0] = c[0];
+                    p[1] = c[1];
+                    p[2] = c[2];
+                }
+            }
+        }
+    }
+}
+
+void look_apply_rgb888_sensor(look_t l, uint8_t *rgb, int sensor_w, int rows, int y0, int img_sensor_w,
+                              int img_sensor_h)
+{
+    const size_t n = (size_t)sensor_w * rows;
+    if (l == LOOK_COOL) {
+        tone(rgb, n, 218, 246, 296, 10);
+    } else if (l == LOOK_WARM) {
+        tone(rgb, n, 290, 264, 205, 0);
+    } else if (l == LOOK_BW) {
+        mono(rgb, n);
+    } else if (l >= LOOK_PIXEL_RED && l <= LOOK_PIXEL_GRAY) {
+        const int b = look_pixel_block(img_sensor_h); /* portrait width */
+        assert(y0 % b == 0);
+        assert(rows % b == 0 || y0 + rows == img_sensor_h);
+        pixelate_sensor(PALETTES[l - LOOK_PIXEL_RED], rgb, sensor_w, rows, b);
+    } else if (l >= LOOK_FRAME_STICKER && l < LOOK_COUNT) {
+        frame_apply_sensor(l, rgb, sensor_w, rows, y0, img_sensor_w, img_sensor_h);
+    }
 }
 
 void look_apply_rgb565(look_t l, uint16_t *px, int w, int h)

@@ -110,12 +110,17 @@ static lv_obj_t *overlay_label(lv_obj_t *parent, const lv_font_t *font)
     return l;
 }
 
-static void enter(lv_obj_t *scr)
+void ui_camera_reserve(void)
 {
     if (!s_vf) {
         s_vf = heap_caps_calloc(1, VF_W * VF_H * 2, MALLOC_CAP_SPIRAM);
         s_dsc.data = (const uint8_t *)s_vf;
     }
+}
+
+static void enter(lv_obj_t *scr)
+{
+    ui_camera_reserve();
     memset(&s, 0, sizeof(s));
     s.current = settings_look();
     camera_set_look(s.current);
@@ -198,6 +203,7 @@ static void viewfinder_step(void)
     }
     uint16_t *f = camera_preview_frame();
     if (!f) {
+        vTaskDelay(pdMS_TO_TICKS(20)); /* no camera: don't spin the UI task */
         return;
     }
     look_apply_rgb565(s.current, f, VF_W, VF_H);

@@ -10,3 +10,6 @@
 /* Decode a JPEG file scaled to fit 240x320 (RGB565, native order, letterboxed on
    black). out must hold 240*320 pixels. */
 esp_err_t jpeg_preview_load(const char *path, uint16_t *out);
+
+/* Allocate the decoder buffer now (at boot). */
+void jpeg_preview_reserve(void);

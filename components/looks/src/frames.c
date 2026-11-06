@@ -128,15 +128,51 @@ static bool charmera(const geom_t *g, int x, int y, uint8_t *p)
     return false;
 }
 
+typedef bool (*draw_fn)(const geom_t *, int, int, uint8_t *);
+
+static draw_fn drawer(look_t l)
+{
+    switch (l) {
+    case LOOK_FRAME_STICKER: return sticker;
+    case LOOK_FRAME_PC: return pc_window;
+    case LOOK_FRAME_FILM: return film;
+    case LOOK_FRAME_CHARMERA: return charmera;
+    default: return NULL;
+    }
+}
+
+void frame_apply_sensor(look_t l, uint8_t *rgb, int sensor_w, int rows, int y0, int img_sensor_w,
+                        int img_sensor_h)
+{
+    draw_fn draw = drawer(l);
+    if (!draw) {
+        return;
+    }
+    /* Portrait image: pw = sensor height, ph = sensor width. */
+    const int pw = img_sensor_h, ph = img_sensor_w;
+    const int t = pw / 32 < 4 ? 4 : pw / 32;
+    const geom_t g = {pw, ph, t};
+    const int reach = FRAME_REACH * t;
+    for (int r = 0; r < rows; r++) {
+        const int px = y0 + r;
+        uint8_t *row = rgb + (size_t)r * sensor_w * 3;
+        const bool edge_col = px < reach || px >= pw - reach;
+        for (int sx = 0; sx < sensor_w; sx++) {
+            const int py = img_sensor_w - 1 - sx;
+            if (edge_col || py < reach || py >= ph - reach) {
+                draw(&g, px, py, row + sx * 3);
+            } else {
+                sx = img_sensor_w - reach - 1; /* skip to the other border */
+            }
+        }
+    }
+}
+
 void frame_apply(look_t l, uint8_t *rgb, int strip_w, int strip_h, int y0, int img_w, int img_h)
 {
-    bool (*draw)(const geom_t *, int, int, uint8_t *) = NULL;
-    switch (l) {
-    case LOOK_FRAME_STICKER: draw = sticker; break;
-    case LOOK_FRAME_PC: draw = pc_window; break;
-    case LOOK_FRAME_FILM: draw = film; break;
-    case LOOK_FRAME_CHARMERA: draw = charmera; break;
-    default: return;
+    draw_fn draw = drawer(l);
+    if (!draw) {
+        return;
     }
     const int t = img_w / 32 < 4 ? 4 : img_w / 32;
     const geom_t g = {img_w, img_h, t};

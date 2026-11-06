@@ -64,6 +64,32 @@ static void test_long_then_release_no_short(void)
     TEST_ASSERT_EQUAL(INPUT_NONE, run_button(&s, 1000, 3000, false).ev);
 }
 
+static void test_suppress_drops_pending_short(void)
+{
+    /* Pressed and released just before a save ends: the short press is still pending
+       when the UI flushes input. It must not fire afterwards. */
+    btn_state_t s;
+    btn_init(&s);
+    run_button(&s, 0, 100, true);
+    run_button(&s, 100, 200, false);
+    btn_suppress(&s);
+    TEST_ASSERT_EQUAL(INPUT_NONE, run_button(&s, 200, 2000, false).ev);
+}
+
+static void test_suppress_ignores_held_until_release(void)
+{
+    /* Held through the end of a save: no long press, and nothing on release. */
+    btn_state_t s;
+    btn_init(&s);
+    run_button(&s, 0, 300, true);
+    btn_suppress(&s);
+    TEST_ASSERT_EQUAL(INPUT_NONE, run_button(&s, 300, 3000, true).ev);
+    TEST_ASSERT_EQUAL(INPUT_NONE, run_button(&s, 3000, 4000, false).ev);
+    /* the next real press works */
+    run_button(&s, 4000, 4100, true);
+    TEST_ASSERT_EQUAL(INPUT_SHORT, run_button(&s, 4100, 5000, false).ev);
+}
+
 static hit_t run_tilt(tilt_state_t *s, uint32_t from, uint32_t to, float roll)
 {
     for (uint32_t t = from; t < to; t += 10) {
@@ -148,6 +174,8 @@ int main(void)
     RUN_TEST(test_double_press);
     RUN_TEST(test_long_press_fires_once);
     RUN_TEST(test_long_then_release_no_short);
+    RUN_TEST(test_suppress_drops_pending_short);
+    RUN_TEST(test_suppress_ignores_held_until_release);
     RUN_TEST(test_tilt_needs_hold);
     RUN_TEST(test_tilt_auto_repeat);
     RUN_TEST(test_tilt_rearm_requires_level);

@@ -94,12 +94,18 @@ static lv_obj_t *label(lv_obj_t *parent, const lv_font_t *font)
     return l;
 }
 
-static void enter(lv_obj_t *scr)
+void ui_gallery_reserve(void)
 {
     if (!s_px) {
         s_px = heap_caps_calloc(1, PREVIEW_W * PREVIEW_H * 2, MALLOC_CAP_SPIRAM);
         s_dsc.data = (const uint8_t *)s_px;
     }
+    jpeg_preview_reserve();
+}
+
+static void enter(lv_obj_t *scr)
+{
+    ui_gallery_reserve();
     memset(&s, 0, sizeof(s));
     s.img = lv_image_create(scr);
     lv_image_set_src(s.img, &s_dsc);

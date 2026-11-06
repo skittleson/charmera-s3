@@ -24,6 +24,7 @@ typedef struct {
     uint32_t down_at, up_at;
     int presses;
     bool long_fired;
+    bool suppressed;
 } btn_state_t;
 
 typedef struct {
@@ -36,6 +37,9 @@ typedef struct {
 void btn_init(btn_state_t *s);
 /* Call every ~10 ms with the current button level. */
 input_event_t btn_update(btn_state_t *s, bool pressed, uint32_t now_ms);
+/* Forget any press in progress or pending, and ignore the button until it has been
+   released. Used after long blocking work so stale presses don't fire. */
+void btn_suppress(btn_state_t *s);
 
 void tilt_init(tilt_state_t *s);
 /* Positive roll = tilted right = INPUT_NEXT. */

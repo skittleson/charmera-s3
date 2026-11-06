@@ -1,7 +1,8 @@
 # Charmera-S3
 
 A one-button, Kodak Charmera-style digital camera for the Waveshare **ESP32-S3-LCD-2**
-(2" 240×320 screen, no touch) with an **OV2640** camera and a microSD card.
+(2" 240×320 screen, no touch) with an **OV5640-AF** (or the stock **OV2640**) camera and a
+microSD card. The camera is detected at boot.
 
 Hold it like a phone, with USB-C at the bottom.
 
@@ -29,18 +30,21 @@ Hold it like a phone, with USB-C at the bottom.
 
 ## Photos
 
-`DCIM/100CHARM/IMG_0001.JPG`, … — 1200×1600 portrait JPEGs (quality 92). Numbering
-continues from the highest number on the card and never overwrites. Put the card in your
-PC's reader to copy them off.
+`DCIM/100CHARM/IMG_0001.JPG`, … Numbering continues from the highest number on the card
+and never overwrites. Put the card in your PC's reader to copy them off.
 
-A photo takes about 6–7 s from press to "Saved": about 2 s to capture, 1 s to process and
-2–3 s to write to the card.
+| Camera | Photo | From press to "Saved" |
+|---|---|---|
+| OV5640-AF | 1920×2560 portrait (stored 2560×1920 + EXIF orientation), autofocus | Normal ~4–6 s; other looks ~8–14 s |
+| OV2640 | 1200×1600 portrait | ~6–7 s |
 
 ## Hardware notes
 
+- **OV5640:** sensor JPEG at quality 12. Better settings (6–9) gave truncated frames
+  after the first shot or two. Autofocus runs at full resolution just before each shot.
+  Boot takes about 6 s while the AF firmware loads.
 - **OV2640:** its JPEG output is broken on this module and its YUV output is green, so the
-  firmware captures raw RGB565 and encodes JPEG itself. An OV5640 is detected
-  automatically and would shoot 1944×2592.
+  firmware captures raw RGB565 and encodes JPEG itself.
 - Pins: `components/board/include/board.h`, `components/camera/camera.c`.
 
 ## Build and flash

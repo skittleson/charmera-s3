@@ -68,9 +68,11 @@ static void test_cool_and_warm_shift(void)
 
 static void test_pixel_block_sizes(void)
 {
-    TEST_ASSERT_EQUAL(4, look_pixel_block(320));
-    TEST_ASSERT_EQUAL(32, look_pixel_block(2592));
-    TEST_ASSERT_EQUAL(4, look_pixel_block(100));
+    /* Same number of cells (80) across the viewfinder and the photo. */
+    TEST_ASSERT_EQUAL(3, look_pixel_block(240));
+    TEST_ASSERT_EQUAL(15, look_pixel_block(1200));
+    TEST_ASSERT_EQUAL(240 / look_pixel_block(240), 1200 / look_pixel_block(1200));
+    TEST_ASSERT_EQUAL(2, look_pixel_block(100));
 }
 
 static void test_pixel_filter_two_tones(void)
@@ -252,6 +254,44 @@ static void test_rgb565_matches_rgb888(void)
     free(rgb);
 }
 
+/* Sensor-orientation strips (landscape sw x sh) must give exactly the photo you'd get
+   by rotating to portrait first (portrait (px,py) = sensor (sw-1-py, px)) and applying
+   the portrait look. */
+static void rotate_to_portrait(const uint8_t *src, int sw, int sh, uint8_t *dst)
+{
+    const int pw = sh, ph = sw;
+    for (int py = 0; py < ph; py++) {
+        for (int px = 0; px < pw; px++) {
+            memcpy(dst + ((size_t)py * pw + px) * 3, src + ((size_t)px * sw + (sw - 1 - py)) * 3, 3);
+        }
+    }
+}
+
+static void test_sensor_strips_match_portrait_for_every_look(void)
+{
+    const int sw = 480, sh = 360; /* portrait 360 x 480 */
+    const int b = look_pixel_block(sh);
+    const int strip = b * 4;
+    for (look_t l = LOOK_NORMAL; l < LOOK_COUNT; l++) {
+        uint8_t *sensor = random_image(sw, sh, 21);
+        uint8_t *portrait = malloc((size_t)sw * sh * 3);
+        uint8_t *rotated = malloc((size_t)sw * sh * 3);
+        rotate_to_portrait(sensor, sw, sh, portrait);
+        look_set_pixel_threshold(100);
+        look_apply_rgb888(l, portrait, sh, sw, 0, sh, sw);
+        for (int y0 = 0; y0 < sh; y0 += strip) {
+            const int rows = (sh - y0) < strip ? (sh - y0) : strip;
+            look_apply_rgb888_sensor(l, sensor + (size_t)y0 * sw * 3, sw, rows, y0, sw, sh);
+        }
+        rotate_to_portrait(sensor, sw, sh, rotated);
+        TEST_ASSERT_EQUAL_MEMORY_MESSAGE(portrait, rotated, (size_t)sw * sh * 3, look_name(l));
+        free(sensor);
+        free(portrait);
+        free(rotated);
+    }
+    look_set_pixel_threshold(128);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -268,5 +308,6 @@ int main(void)
     RUN_TEST(test_strip_with_partial_last_strip);
     RUN_TEST(test_frame_leaves_centre_untouched);
     RUN_TEST(test_rgb565_matches_rgb888);
+    RUN_TEST(test_sensor_strips_match_portrait_for_every_look);
     return UNITY_END();
 }

@@ -22,6 +22,12 @@ extern const ui_screen_t ui_camera_screen;
 extern const ui_screen_t ui_gallery_screen;
 extern const ui_screen_t ui_settings_screen;
 
+/* Allocate the screens' long-lived buffers. Call at boot before camera_init() so they
+   don't fragment the PSRAM the camera's full-res frame needs. */
+void ui_reserve(void);
+void ui_camera_reserve(void);
+void ui_gallery_reserve(void);
+
 /* Start the UI task on the camera screen. */
 void ui_start(void);
 void ui_show(ui_screen_id_t id);

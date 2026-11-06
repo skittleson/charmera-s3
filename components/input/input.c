@@ -40,6 +40,7 @@ static const char *TAG = "input";
 static QueueHandle_t s_queue;
 static i2c_master_dev_handle_t s_imu;
 static volatile bool s_tilt_enabled = true;
+static volatile bool s_suppress;
 static volatile float s_roll;
 static int16_t s_raw[3];
 
@@ -110,6 +111,11 @@ static void poll_task(void *arg)
     int16_t raw[3] = {0};
     for (;;) {
         const uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+        if (s_suppress) {
+            s_suppress = false;
+            btn_suppress(&btn);
+            xQueueReset(s_queue);
+        }
         push(btn_update(&btn, gpio_get_level(BOARD_PIN_BOOT) == 0, now));
         float roll;
         if (s_imu && imu_roll(&roll, raw)) {
@@ -156,6 +162,12 @@ input_event_t input_get(uint32_t timeout_ms)
 void input_flush(void)
 {
     xQueueReset(s_queue);
+    /* Also drop a press still being timed (a short press is only reported 350 ms after
+       release) and ignore a button held through the end of the work. */
+    s_suppress = true;
+    while (s_suppress) {
+        vTaskDelay(pdMS_TO_TICKS(POLL_MS));
+    }
 }
 
 void input_set_tilt_enabled(bool on)
