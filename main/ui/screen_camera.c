@@ -276,6 +276,7 @@ static void shoot(void)
     }
     /* Presses and tilts made while saving are dropped, not replayed. */
     input_flush();
+    ui_note_activity(); /* idle time counts from the end of the save */
     s.busy = false;
     s.next_status = 0;
 }

@@ -132,6 +132,7 @@ static void on_format(int yes)
     ESP_LOGI(TAG, "format -> %s", esp_err_to_name(err));
     ui_toast(err == ESP_OK ? "Card formatted" : "Format failed", 2000);
     input_flush();
+    ui_note_activity();
     s.next_info = 0;
     repaint();
 }
