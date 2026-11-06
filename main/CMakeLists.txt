@@ -1,3 +1,4 @@
-idf_component_register(SRCS "main.c"
-                       INCLUDE_DIRS "."
-                       REQUIRES board display input storage camera pipeline nvs_flash esp_timer mbedtls)
+idf_component_register(SRCS "main.c" "settings.c" "power.c"
+                            "ui/ui.c" "ui/screen_camera.c" "ui/screen_gallery.c" "ui/screen_settings.c"
+                       INCLUDE_DIRS "." "ui"
+                       REQUIRES board display input storage camera looks pipeline nvs_flash esp_timer)

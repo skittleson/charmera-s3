@@ -109,6 +109,70 @@ static void test_pixel_filter_two_tones(void)
     free(img);
 }
 
+static int distinct_colours(const uint8_t *img, int n)
+{
+    uint32_t seen[8];
+    int k = 0;
+    for (int i = 0; i < n && k < 8; i++) {
+        const uint32_t c = (img[i * 3] << 16) | (img[i * 3 + 1] << 8) | img[i * 3 + 2];
+        int found = 0;
+        for (int j = 0; j < k; j++) {
+            found |= seen[j] == c;
+        }
+        if (!found) {
+            seen[k++] = c;
+        }
+    }
+    return k;
+}
+
+static void test_pixel_filter_dark_scene_keeps_two_tones(void)
+{
+    /* A dim scene (all luma < 100) must still show both tones, using the threshold
+       taken from the scene. */
+    const int w = 320, h = 240;
+    uint8_t *img = malloc(w * h * 3);
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            uint8_t v = (uint8_t)(10 + x * 90 / (w - 1));
+            uint8_t *p = img + (y * w + x) * 3;
+            p[0] = p[1] = p[2] = v;
+        }
+    }
+    look_set_pixel_threshold(look_mean_luma_rgb888(img, w * h));
+    look_apply_rgb888(LOOK_PIXEL_RED, img, w, h, 0, w, h);
+    TEST_ASSERT_EQUAL(2, distinct_colours(img, w * h));
+    free(img);
+    look_set_pixel_threshold(128);
+}
+
+static void test_rgb565_dark_scene_keeps_two_tones(void)
+{
+    const int w = 240, h = 320;
+    uint16_t *px = malloc(w * h * 2);
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            const uint8_t v = (uint8_t)(10 + x * 90 / (w - 1));
+            px[y * w + x] = (uint16_t)(((v >> 3) << 11) | ((v >> 2) << 5) | (v >> 3));
+        }
+    }
+    look_apply_rgb565(LOOK_PIXEL_BLUE, px, w, h);
+    int k = 0;
+    uint16_t seen[4];
+    for (int i = 0; i < w * h && k < 4; i++) {
+        int f = 0;
+        for (int j = 0; j < k; j++) {
+            f |= seen[j] == px[i];
+        }
+        if (!f) {
+            seen[k++] = px[i];
+        }
+    }
+    TEST_ASSERT_EQUAL(2, k);
+    free(px);
+    look_set_pixel_threshold(128);
+}
+
 static void test_strip_equals_whole_for_every_software_look(void)
 {
     const int w = 640, h = 480;
@@ -198,6 +262,8 @@ int main(void)
     RUN_TEST(test_cool_and_warm_shift);
     RUN_TEST(test_pixel_block_sizes);
     RUN_TEST(test_pixel_filter_two_tones);
+    RUN_TEST(test_pixel_filter_dark_scene_keeps_two_tones);
+    RUN_TEST(test_rgb565_dark_scene_keeps_two_tones);
     RUN_TEST(test_strip_equals_whole_for_every_software_look);
     RUN_TEST(test_strip_with_partial_last_strip);
     RUN_TEST(test_frame_leaves_centre_untouched);

@@ -20,6 +20,20 @@
   for each shot and back to 320×240 after (~3 s capture). The UI must cover this with
   instant feedback (freeze frame + flash at the press).
 - No autofocus (OV2640).
+- **Tilt no longer controls anything (owner, after trying it).** Looks are chosen from
+  the hold-BOOT menu: **Camera / Looks / Gallery / Settings**; "Looks" opens a list of
+  the 12 looks. The motion sensor now drives an optional **on-screen level** while
+  shooting (a horizon line that turns green when the camera is level), **off by
+  default**, toggled in Settings.
+- **Gallery:** press = next (older) photo, hold = menu (Delete this / Delete all /
+  Back), double press = back to the camera.
+- **Menus and lists (owner's request after trying it):** press = move down, **hold =
+  choose**, double press = close / back. Tilt does **not** move in menus (holding the
+  camera slightly tilted made it carousel). On the camera screen: press =
+  shoot, hold = menu.
+- **Pixel filters** split light/dark at the scene's mean brightness (owner saw solid
+  colour in a dim room with a fixed threshold). The photo uses the same threshold as the
+  viewfinder frame it was taken from.
 
 ## Intent
 

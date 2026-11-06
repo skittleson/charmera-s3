@@ -62,6 +62,12 @@ esp_err_t pipeline_init(void)
     return ESP_OK;
 }
 
+uint8_t *pipeline_scratch(size_t *len)
+{
+    *len = OUT_BUF_BYTES;
+    return s_obuf;
+}
+
 const char *pipeline_result_text(pipe_result_t r)
 {
     switch (r) {
@@ -168,9 +174,11 @@ pipe_result_t pipeline_take_photo(look_t look, pipe_captured_cb on_captured, pip
         return PIPE_CAPTURE_FAILED;
     }
     const int64_t t1 = esp_timer_get_time();
+    /* The thumbnail also sets the pixel-filter threshold from this scene, so the
+       full-size photo splits its tones exactly like the viewfinder did. */
+    camera_photo_thumbnail(fb, s_thumb);
+    look_apply_rgb565(look, s_thumb, 240, 320);
     if (on_captured) {
-        camera_photo_thumbnail(fb, s_thumb);
-        look_apply_rgb565(look, s_thumb, 240, 320);
         on_captured(s_thumb, ctx);
     }
     uint8_t *jpeg = NULL;

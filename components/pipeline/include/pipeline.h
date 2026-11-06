@@ -1,5 +1,8 @@
 #pragma once
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "esp_err.h"
 #include "looks.h"
 
@@ -28,3 +31,7 @@ pipe_result_t pipeline_take_photo(look_t look, pipe_captured_cb on_captured, pip
                                   void *ctx, int *out_number);
 
 const char *pipeline_result_text(pipe_result_t r);
+
+/* The pipeline's JPEG buffer, for other code to borrow when no photo is being taken
+   (the gallery reads files into it). */
+uint8_t *pipeline_scratch(size_t *len);

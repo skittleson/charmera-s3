@@ -63,6 +63,32 @@ look_t look_prev(look_t l)
     return (look_t)((l + LOOK_COUNT - 1) % LOOK_COUNT);
 }
 
+static int s_threshold = 128;
+
+void look_set_pixel_threshold(int luma)
+{
+    s_threshold = luma < 1 ? 1 : (luma > 254 ? 254 : luma);
+}
+
+int look_mean_luma_rgb888(const uint8_t *rgb, int n)
+{
+    uint64_t sum = 0;
+    for (int i = 0; i < n; i++, rgb += 3) {
+        sum += (77u * rgb[0] + 150u * rgb[1] + 29u * rgb[2]) >> 8;
+    }
+    return n ? (int)(sum / n) : 128;
+}
+
+int look_mean_luma_rgb565(const uint16_t *px, int n)
+{
+    uint64_t sum = 0;
+    for (int i = 0; i < n; i++) {
+        const uint16_t v = px[i];
+        sum += (77u * (((v >> 11) & 0x1f) << 3) + 150u * (((v >> 5) & 0x3f) << 2) + 29u * ((v & 0x1f) << 3)) >> 8;
+    }
+    return n ? (int)(sum / n) : 128;
+}
+
 int look_pixel_block(int img_w)
 {
     int b = img_w / 80;
@@ -84,7 +110,7 @@ static void pixelate(const uint8_t pal[2][3], uint8_t *rgb, int w, int h, int y0
                     sum += (77u * p[0] + 150u * p[1] + 29u * p[2]) >> 8;
                 }
             }
-            const uint8_t *c = pal[(sum / (uint32_t)(cw * ch)) >= 128 ? 1 : 0];
+            const uint8_t *c = pal[(int)(sum / (uint32_t)(cw * ch)) >= s_threshold ? 1 : 0];
             for (int y = cy; y < cy + ch; y++) {
                 uint8_t *p = rgb + ((size_t)y * w + cx) * 3;
                 for (int x = 0; x < cw; x++, p += 3) {
@@ -134,6 +160,9 @@ void look_apply_rgb565(look_t l, uint16_t *px, int w, int h)
 {
     if (!look_is_software(l) || !look_reserve_rgb565(w, h)) {
         return;
+    }
+    if (l >= LOOK_PIXEL_RED && l <= LOOK_PIXEL_GRAY) {
+        look_set_pixel_threshold(look_mean_luma_rgb565(px, w * h));
     }
     uint8_t *buf = s_buf;
     for (int i = 0; i < w * h; i++) {

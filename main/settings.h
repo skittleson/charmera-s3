@@ -1,0 +1,18 @@
+#pragma once
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "looks.h"
+
+/* Persistent device settings (NVS). */
+void settings_load(void);
+
+uint8_t settings_brightness(void); /* 10..100, default 80 */
+void settings_set_brightness(uint8_t pct);
+
+bool settings_level(void); /* on-screen level while shooting, default off */
+void settings_set_level(bool on);
+
+look_t settings_look(void);
+void settings_set_look(look_t l);

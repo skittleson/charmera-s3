@@ -20,13 +20,14 @@
 #define IMU_AX_L      0x35
 #define IMU_ID        0x05
 
-/* Accelerometer axis that points along the long (left-right) edge when the camera is
-   held landscape with USB-C on the right, and the axis gravity points along when level. Measured on the board: tilting right gives +X, level gives +Y = 1 g. */
+/* Portrait grip, USB-C down: gravity runs along the accelerometer's X axis and a
+   left/right tilt swings it into Y. (Landscape USB-right measured roll=+X over Y,
+   so turning the board 90 degrees moves gravity onto X.) */
 #ifndef INPUT_ROLL_AXIS
-#define INPUT_ROLL_AXIS 0
+#define INPUT_ROLL_AXIS 1
 #endif
 #ifndef INPUT_GRAVITY_AXIS
-#define INPUT_GRAVITY_AXIS 1
+#define INPUT_GRAVITY_AXIS 0
 #endif
 #ifndef INPUT_ROLL_SIGN
 #define INPUT_ROLL_SIGN 1.0f
@@ -81,9 +82,15 @@ static bool imu_roll(float *roll_deg, int16_t raw[3])
     for (int i = 0; i < 3; i++) {
         raw[i] = (int16_t)(b[i * 2] | (b[i * 2 + 1] << 8));
     }
-    *roll_deg = INPUT_ROLL_SIGN * atan2f((float)raw[INPUT_ROLL_AXIS],
-                                         fabsf((float)raw[INPUT_GRAVITY_AXIS]) + 1.0f) *
-                (180.0f / (float)M_PI);
+    const float r = (float)raw[INPUT_ROLL_AXIS];
+    const float g = fabsf((float)raw[INPUT_GRAVITY_AXIS]);
+    const float face = fabsf((float)raw[3 - INPUT_ROLL_AXIS - INPUT_GRAVITY_AXIS]);
+    /* Lying flat or aimed straight up/down: left/right tilt has no meaning. */
+    if (face > 0.7f * sqrtf(r * r + g * g + face * face)) {
+        *roll_deg = 0.0f;
+        return true;
+    }
+    *roll_deg = INPUT_ROLL_SIGN * atan2f(r, g + 1.0f) * (180.0f / (float)M_PI);
     return true;
 }
 

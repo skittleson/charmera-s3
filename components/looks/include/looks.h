@@ -41,6 +41,12 @@ void look_apply_rgb888(look_t l, uint8_t *rgb, int strip_w, int strip_h, int y0,
    look_apply_rgb888 after expanding each channel by left shift. */
 void look_apply_rgb565(look_t l, uint16_t *px, int w, int h);
 
+/* Pixel filters split each cell into the light or dark tone at this luma (0..255).
+   Use the scene's mean so dim and bright scenes both keep two tones. Default 128. */
+void look_set_pixel_threshold(int luma);
+int look_mean_luma_rgb888(const uint8_t *rgb, int n);
+int look_mean_luma_rgb565(const uint16_t *px, int n);
+
 /* Allocate look_apply_rgb565's scratch buffer now (call at boot, before large
    allocations, to avoid fragmenting memory later). */
 bool look_reserve_rgb565(int w, int h);
