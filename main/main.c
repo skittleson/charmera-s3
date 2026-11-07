@@ -8,6 +8,7 @@
 #include "input.h"
 #include "pipeline.h"
 #include "power.h"
+#include "remote_bridge.h"
 #include "settings.h"
 #include "storage.h"
 #include "ui/ui.h"
@@ -36,5 +37,6 @@ void app_main(void)
     storage_status();
     power_init();
     ui_start();
+    remote_bridge_init();
     board_backlight_set(settings_brightness());
 }

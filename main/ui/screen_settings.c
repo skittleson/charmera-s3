@@ -6,13 +6,14 @@
 #include "display.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "remote_bridge.h"
 #include "settings.h"
 #include "storage.h"
 #include "ui.h"
 
 static const char *TAG = "ui_settings";
 
-enum { ROW_BRIGHTNESS, ROW_LEVEL, ROW_FORMAT, ROW_BACK, ROW_COUNT };
+enum { ROW_BRIGHTNESS, ROW_LEVEL, ROW_BLUETOOTH, ROW_FORMAT, ROW_BACK, ROW_COUNT };
 
 static struct {
     lv_obj_t *info;
@@ -74,12 +75,16 @@ static void paint(void)
              (unsigned)settings_brightness());
     lv_label_set_text(s.rows[ROW_BRIGHTNESS], t);
     lv_label_set_text(s.rows[ROW_LEVEL], settings_level() ? "Level  On" : "Level  Off");
+    lv_label_set_text(s.rows[ROW_BLUETOOTH], settings_bluetooth() ? "Bluetooth  On" : "Bluetooth  Off");
     lv_label_set_text(s.rows[ROW_FORMAT], storage_status() == STORAGE_OK ? "Format card" : "Format card (no card)");
     lv_label_set_text(s.rows[ROW_BACK], "Back to camera");
     for (int i = 0; i < ROW_COUNT; i++) {
         const bool on = i == s.sel;
         lv_obj_set_style_bg_color(s.rows[i], on ? UI_COLOR_ACCENT : lv_color_hex(0x2a2a2a), 0);
         lv_obj_set_style_text_color(s.rows[i], on ? lv_color_black() : UI_COLOR_FG, 0);
+        if (on) {
+            lv_obj_scroll_to_view(s.rows[i], LV_ANIM_OFF); /* the list is taller than the screen */
+        }
     }
 }
 
@@ -94,6 +99,8 @@ static void repaint(void)
 static void enter(lv_obj_t *scr)
 {
     memset(&s, 0, sizeof(s));
+    lv_obj_set_scrollable(scr, true);
+    lv_obj_set_scrollbar_mode(scr, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_all(scr, 8, 0);
     lv_obj_set_style_pad_row(scr, 6, 0);
@@ -145,6 +152,11 @@ static void activate(void)
         break;
     case ROW_LEVEL:
         settings_set_level(!settings_level());
+        break;
+    case ROW_BLUETOOTH:
+        settings_set_bluetooth(!settings_bluetooth());
+        remote_bridge_set_enabled(settings_bluetooth());
+        ui_toast(settings_bluetooth() ? "Bluetooth on" : "Bluetooth off", 1200);
         break;
     case ROW_FORMAT:
         if (storage_status() == STORAGE_OK) {

@@ -8,6 +8,7 @@
 static uint8_t s_brightness = 80;
 static uint8_t s_look = LOOK_NORMAL;
 static uint8_t s_level;
+static uint8_t s_ble = 1;
 static uint8_t s_lapse = LAPSE_INTERVAL_DEFAULT;
 
 static void save_u8(const char *key, uint8_t v)
@@ -27,6 +28,7 @@ void settings_load(void)
         nvs_get_u8(h, "bright", &s_brightness);
         nvs_get_u8(h, "look", &s_look);
         nvs_get_u8(h, "level", &s_level);
+        nvs_get_u8(h, "ble", &s_ble);
         nvs_get_u8(h, "lapse", &s_lapse);
         nvs_close(h);
     }
@@ -88,4 +90,15 @@ void settings_set_lapse_interval(int index)
 {
     s_lapse = (index >= 0 && index < LAPSE_INTERVAL_COUNT) ? (uint8_t)index : LAPSE_INTERVAL_DEFAULT;
     save_u8("lapse", s_lapse);
+}
+
+bool settings_bluetooth(void)
+{
+    return s_ble != 0;
+}
+
+void settings_set_bluetooth(bool on)
+{
+    s_ble = on ? 1 : 0;
+    save_u8("ble", s_ble);
 }
