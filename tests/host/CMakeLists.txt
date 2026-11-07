@@ -31,6 +31,7 @@ function(add_host_test name)
         ${REPO}/components/input/include
         ${REPO}/components/remote/include
         ${REPO}/components/pipeline/include
+        ${REPO}/components/orient/include
         ${REPO}/components/looks/include)
     target_compile_options(test_${name} PRIVATE -Wall -Wextra -Werror)
     target_link_libraries(test_${name} PRIVATE unity m)
@@ -47,3 +48,4 @@ add_host_test(lapse_logic ${REPO}/main/logic/lapse_logic.c)
 target_include_directories(test_lapse_logic PRIVATE ${REPO}/main/logic)
 add_host_test(remote_proto ${REPO}/components/remote/src/remote_proto.c)
 add_host_test(exif ${REPO}/components/pipeline/src/exif.c)
+add_host_test(orient ${REPO}/components/orient/orient.c)
