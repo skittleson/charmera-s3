@@ -70,6 +70,15 @@ Every call made on the owner's behalf during the build, in order, from the build
 - Ruling: exposure time, ISO, focal length and aperture are omitted: the sensors' register values can't be turned into accurate EXIF units without per-mode timing maths, and the modules' lens specs are unknown. SerialNumber = the board's MAC.
 - Not yet run on the board (owner skipped); the service worker cache was bumped to v2 so installed PWAs pick up the new page.
 
+## Orientation (owner: settable incl. Auto; "try to do it without [the board]")
+
+- Ruling: Settings → Orientation steps Portrait / USB-C right / USB-C left / Auto (NVS `orient`, default Portrait); Bluetooth `orientation <name>`, refused during a run; status `orientation` (in effect) + `orientationSetting`.
+- Ruling: pure `orient` component owns view<->sensor mapping, EXIF values and the Auto state machine (switch after 0.7 s within 30 deg of a grip's centre; dead zone between grips; ignores lying flat; locked while saving / during a run / menu open / screen off; camera screen only).
+- Ruling: pixel cells and frame thickness come from the short edge, so landscape looks like portrait turned; portrait output is unchanged (existing tests pass untouched for portrait sizes).
+- Ruling: rebuilding the camera screen for a new orientation keeps the mode, armed time-lapse and sensor power.
+- Fixed while here: since the EXIF change, the gallery read Orientation only from the first IFD0 tag (now ImageDescription), so OV5640 photos showed sideways; replaced by a real IFD walk with bounds checks (host-tested, including malformed files). The gallery now fits any photo shape on either screen shape (decode at >= 1/8, then nearest-neighbour scale).
+- NOT run on the board (owner kept it unplugged). Four constants are derived, not measured: ORIENT_SENSOR_NATIVE = USB-C left (from the verified portrait mapping), ORIENT_LEFT_DEG = +90 (from the owner-checked portrait level; an older landscape tilt log disagrees), LVGL rotation 90 = USB-C left (LVGL's clockwise naming), INPUT_DOWN_SIGN = +1 (landscape level only). The boot log prints the raw gravity values to check them.
+
 ## Deferred minor issues (from the final review)
 
 - "card full" estimate can still fail mid-write on the last photo (now returns Card full via free-space check before writing).

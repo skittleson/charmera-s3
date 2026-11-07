@@ -53,14 +53,15 @@ you turn it on.
 - **12 looks:** Normal, Cool, Warm, Black & White, four duotone *Pixel* filters
   (Red / Yellow / Blue / Gray), and four frames (Sticker, PC Window, Film Strip, Charmera).
 - **Best quality the fitted camera can give.** The camera is detected at boot:
-  - **OV5640-AF:** 1920 × 2560 portrait photos, with autofocus on every shot.
-  - **OV2640 (stock):** 1200 × 1600 portrait photos, encoded by the firmware.
+  - **OV5640-AF:** 5 MP photos (1920 × 2560 portrait or 2560 × 1920 landscape), with autofocus on every shot.
+  - **OV2640 (stock):** 2 MP photos (1200 × 1600 portrait or 1600 × 1200 landscape), encoded by the firmware.
+- **Hold it any way:** portrait, landscape either way round, or **Auto**, which turns the screen like a phone does. The screen, viewfinder, frames, saved photos and gallery all follow.
 - **The viewfinder matches the photo.** The live view and the photo encoder share the same C code for each look, and host tests check that both give the same result.
 - **Time-lapse:** one photo every 5 s, 10 s, 30 s, 1 min or 5 min, saved in its own card folder and ready to turn into a video. It keeps shooting while the screen sleeps.
 - **Bluetooth remote:** check the camera's status and take photos, change the look, or run a time-lapse from a web page in Chrome or from nRF Connect.
 - **Gallery:** newest first. Step back through your shots and delete one or all. Delete prompts always have Cancel selected first.
 - **Settings:** card size, free and used space, photo count, battery, brightness, an
-  on-screen level, Bluetooth on/off, and card format.
+  on-screen level, orientation, Bluetooth on/off, and card format.
 - **Full EXIF:** camera, date and time (clock set by the Bluetooth remote), orientation, size, look, and time-lapse run and frame.
 - **Safe saves.** Every photo is written to a temporary file, synced, then renamed, so pulling the card or losing power never leaves a half-written `IMG_xxxx.JPG`.
 - **Battery-friendly.** The screen dims after 30 s and switches off after 3 min, and the camera sensor only runs while the viewfinder is on screen.
@@ -77,8 +78,35 @@ Charmera's tiny physical controls.
 | **Hold** (~1 s) | open the menu: *Camera · Looks · Time-lapse · Gallery · Settings* | choose |
 | **Double press** | — | back / close |
 
-Hold it **like a phone, with USB-C at the bottom**. Turn on **Level** in Settings for a
-horizon line that turns green when the shot is straight.
+By default, hold it **like a phone, with USB-C at the bottom**. To shoot landscape, change
+**Orientation** in Settings (see below). Turn on **Level** in Settings for a horizon line
+that turns green when the shot is straight.
+
+### 🔄 Orientation
+
+In **Settings → Orientation**, hold BOOT to step through four choices:
+
+| Setting | Hold it | Photos (OV5640 / OV2640) |
+|---|---|---|
+| **Portrait** (default) | upright, USB-C at the bottom | 1920 × 2560 / 1200 × 1600 |
+| **USB-C right** | sideways, USB-C on the right | 2560 × 1920 / 1600 × 1200 |
+| **USB-C left** | sideways, USB-C on the left | 2560 × 1920 / 1600 × 1200 |
+| **Auto** | any of the three | follows the camera |
+
+- **What turns:** the screen, menus, viewfinder and level all turn to match. Frames are
+  drawn along the photo's own edges, and pixel looks keep the same block size whichever way
+  you hold it.
+- **How Auto decides:** Auto switches only after you have clearly changed grip and held it
+  there for about 0.7 s, so wobble while framing doesn't flip the screen. A short message
+  names the new grip.
+- **When Auto stays put:** while the camera is lying flat, while a photo is saving, during a
+  time-lapse run (every frame keeps the same shape), with a menu open, or while the screen is
+  off. Auto turns only the camera screen; the gallery and settings keep the orientation they
+  opened in.
+- **Upside down:** holding the camera with USB-C up isn't one of the choices, so Auto treats
+  it as portrait.
+- **Gallery:** every photo, old or new, portrait or landscape, is shown upright in both
+  screen orientations, with black bars where needed.
 
 > [!WARNING]
 > Don't hold BOOT while plugging in or pressing RESET. If you do, the chip starts in
@@ -140,8 +168,8 @@ On Linux, your user needs to be in the `dialout` group to use `/dev/ttyACM0`.
 
 | Camera | Saved as | From press to "Saved" |
 |---|---|---|
-| OV5640-AF | 2560 × 1920 JPEG with an EXIF orientation tag, so it displays as 1920 × 2560 portrait | Normal: about 4–6 s. Other looks: about 8–14 s. |
-| OV2640 | 1200 × 1600 portrait JPEG | about 6–7 s |
+| OV5640-AF | 2560 × 1920 JPEG, with the EXIF orientation tag turning it to match how you held the camera (1920 × 2560 portrait) | Normal: about 4–6 s. Other looks: about 8–14 s. |
+| OV2640 | 1200 × 1600 portrait or 1600 × 1200 landscape JPEG, stored upright | about 6–7 s |
 
 ### 🏷️ EXIF metadata
 
@@ -157,7 +185,7 @@ Every photo and time-lapse frame carries full EXIF, so photo apps sort and label
 
 Time-lapse frames name themselves. `ImageDescription` says which run and frame, and
 `UserComment` holds machine-readable fields:
-`mode=timelapse; folder=101LAPSE; frame=12; interval_s=10; elapsed_s=110; look=Normal; camera=OV5640`.
+`mode=timelapse; folder=101LAPSE; frame=12; interval_s=10; elapsed_s=110; look=Normal; camera=OV5640; orientation=portrait`.
 Single photos say `mode=single; look=…; camera=…`.
 
 The board has no battery-backed clock. **The [web remote](#-bluetooth-remote) sets the camera's
@@ -221,8 +249,8 @@ with three characteristics, plus the standard Battery Service:
 
 | Characteristic | UUID | |
 |---|---|---|
-| Status JSON | `c4a30001-…` | read / notify: `photos`, `left`, `battery`, `usb`, `camera`, `look`, `lookName`, `mode`, `interval`, `intervalName`, `running`, `frames`, `elapsed`, `folder`, `card`, `busy`, `last`, `error`, `clock` |
-| Command | `c4a30002-…` | write text: `look <0-11>`, `mode single`, `mode lapse [0-4]`, `interval <0-4>`, `shoot`, `lapse start`, `lapse stop`, `time <unix seconds> [UTC offset minutes]` |
+| Status JSON | `c4a30001-…` | read / notify: `photos`, `left`, `battery`, `usb`, `camera`, `look`, `lookName`, `mode`, `interval`, `intervalName`, `running`, `frames`, `elapsed`, `folder`, `card`, `busy`, `last`, `error`, `clock`, `orientation`, `orientationSetting` |
+| Command | `c4a30002-…` | write text: `look <0-11>`, `mode single`, `mode lapse [0-4]`, `interval <0-4>`, `shoot`, `lapse start`, `lapse stop`, `time <unix seconds> [UTC offset minutes]`, `orientation <portrait|landscape-right|landscape-left|auto>` |
 | Info JSON | `c4a30003-…` | read: firmware version, look names, interval names |
 
 A rejected command shows its reason in Status (`"error":"bad look"`, `"time-lapse running"`).
@@ -275,6 +303,7 @@ the board:
 | Time-lapse at 10 s and 30 s (frames, sensor sleep between frames, stop) | ✅ yes |
 | Bluetooth remote: every command over BLE from a PC (17 checks), and the web page in Chrome (14 checks) | ✅ yes |
 | Full EXIF and the clock from the remote | ⚠️ no: host-tested, and ExifTool validates the segment in a real JPEG; not yet run on the board |
+| Orientation: landscape grips, Auto, gallery in both orientations | ⚠️ no: host-tested and built, never run on the board. Four values were worked out from earlier measurements rather than measured. Each is a one-line flip if the board disagrees: `ORIENT_SENSOR_NATIVE`, `ORIENT_LEFT_DEG`, `rotation_for()` in `display.c`, and `INPUT_DOWN_SIGN`. |
 
 Board test results are in [`docs/acceptance-2026-11-06.md`](docs/acceptance-2026-11-06.md).
 
@@ -324,6 +353,7 @@ The pure logic builds and runs on your PC with [Unity](https://www.throwtheswitc
 - strip equivalence
 - file naming
 - the button and tilt state machines
+- orientation mapping and Auto, EXIF writing and reading, gallery sizing
 - idle timing
 
 ```sh
@@ -355,6 +385,7 @@ components/
   camera/     sensor detection, viewfinder, full-res capture, rotation, AF
   pipeline/   capture → look → JPEG → card
   remote/     Bluetooth LE service (NimBLE) + host-tested command/status protocol
+  orient/     how the camera is held: view <-> sensor mapping, EXIF values, Auto (host-tested)
 main/
   ui/         camera, gallery, settings screens; menus and toasts
   power.c     dim / screen-off / wake
