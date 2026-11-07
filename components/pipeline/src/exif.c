@@ -176,6 +176,43 @@ size_t exif_build(const exif_info_t *in, uint8_t *out, size_t cap)
     return total;
 }
 
+int exif_read_orientation(const uint8_t *jpeg, size_t len)
+{
+    /* SOI, APP1 marker, length, "Exif\0\0", TIFF header. */
+    if (!jpeg || len < 4 + 2 + 6 + 8 || jpeg[0] != 0xff || jpeg[1] != 0xd8 || jpeg[2] != 0xff || jpeg[3] != 0xe1 ||
+        memcmp(jpeg + 6, "Exif\0\0", 6) != 0) {
+        return 1;
+    }
+    size_t seg = (size_t)(jpeg[4] << 8 | jpeg[5]) + 4; /* APP1 ends here */
+    if (seg > len) {
+        seg = len;
+    }
+    const uint8_t *t = jpeg + 12;
+    const size_t tlen = seg - 12;
+    const bool be = t[0] == 'M' && t[1] == 'M';
+    if (!be && !(t[0] == 'I' && t[1] == 'I')) {
+        return 1;
+    }
+#define RD16(p) (be ? (uint32_t)((p)[0] << 8 | (p)[1]) : (uint32_t)((p)[1] << 8 | (p)[0]))
+#define RD32(p) (be ? ((uint32_t)(p)[0] << 24 | (uint32_t)(p)[1] << 16 | (uint32_t)(p)[2] << 8 | (p)[3]) \
+                    : ((uint32_t)(p)[3] << 24 | (uint32_t)(p)[2] << 16 | (uint32_t)(p)[1] << 8 | (p)[0]))
+    const uint32_t ifd = RD32(t + 4);
+    if (ifd + 2 > tlen) {
+        return 1;
+    }
+    const uint32_t n = RD16(t + ifd);
+    for (uint32_t i = 0; i < n && ifd + 2 + 12 * (i + 1) <= tlen; i++) {
+        const uint8_t *e = t + ifd + 2 + 12 * i;
+        if (RD16(e) == 0x0112 && RD16(e + 2) == T_SHORT) {
+            const uint32_t v = RD16(e + 8);
+            return v >= 1 && v <= 8 ? (int)v : 1;
+        }
+    }
+#undef RD16
+#undef RD32
+    return 1;
+}
+
 void exif_format_datetime(int64_t epoch, int offset_min, char dt[20], char off[7])
 {
     const time_t t = (time_t)(epoch + (int64_t)offset_min * 60);

@@ -21,10 +21,6 @@
 /* SD writes go via DMA-capable internal RAM, 32 KB at a time. */
 #define WRITE_CHUNK    (32 * 1024)
 
-/* EXIF orientation for photos stored in sensor (landscape) orientation: the stored
-   image's first row is the picture's left side and its first column the bottom, so
-   viewers turn it 90 degrees counter-clockwise (EXIF value 8). */
-#define EXIF_ORIENT_PORTRAIT 8
 
 #define EXIF_ORIENT_UPRIGHT 1
 #define EXIF_MAX 1024
@@ -71,13 +67,14 @@ static int strip_rows(int cell, int min_rows)
     return rows;
 }
 
-/* Raw path: strips are portrait rows (photo width = sensor height). */
+/* Raw path: strips are rows of the upright photo; pixel cells come from its short edge
+   (the sensor height), so the strip height is the same in every orientation. */
 static int raw_strip_rows(void)
 {
-    return strip_rows(look_pixel_block(camera_photo_width()), 128);
+    return strip_rows(look_pixel_block(camera_full_height()), 128);
 }
 
-/* JPEG path: strips are sensor rows; pixel cells use the portrait width (= sensor height). */
+/* JPEG path: strips are sensor rows; pixel cells come from the short edge (sensor height). */
 static int sensor_strip_rows(void)
 {
     return strip_rows(look_pixel_block(camera_full_height()), 32);
@@ -100,7 +97,8 @@ esp_err_t pipeline_init(const char *software)
         s_dec_block = jpeg_calloc_align(s_dec_block_bytes, 16);
         s_obuf_bytes = 2600 * 1024; /* re-encoded 5 MP at q92 */
     } else {
-        const int w = camera_photo_width() > 0 ? camera_photo_width() : 1200;
+        /* Widest upright photo in any orientation: the sensor width (landscape). */
+        const int w = camera_full_width() > 0 ? camera_full_width() : 1600;
         s_strip_bytes = (size_t)w * raw_strip_rows() * 3;
         s_obuf_bytes = 1600 * 1024;
     }
@@ -189,7 +187,7 @@ static bool enc_finish(encoder_t *e)
     return true;
 }
 
-/* OV2640: raw sensor frame -> upright portrait strips -> look -> JPEG. */
+/* OV2640: raw sensor frame -> upright strips (portrait or landscape) -> look -> JPEG. */
 static pipe_result_t encode_raw(const camera_fb_t *fb, look_t look, pipe_progress_cb on_progress, void *ctx,
                                 int *out_len)
 {
@@ -223,7 +221,8 @@ static pipe_result_t encode_raw(const camera_fb_t *fb, look_t look, pipe_progres
 }
 
 /* OV5640 with a look: decode the sensor JPEG in blocks, apply the look in sensor
-   orientation, re-encode. Stays landscape; the EXIF tag makes it portrait. */
+   orientation (as the photo will be seen), re-encode. Stays in sensor orientation; the
+   EXIF tag turns it for viewers. */
 static pipe_result_t encode_sensor_jpeg(const camera_fb_t *fb, look_t look, pipe_progress_cb on_progress,
                                         void *ctx, int *out_len)
 {
@@ -263,7 +262,7 @@ static pipe_result_t encode_sensor_jpeg(const camera_fb_t *fb, look_t look, pipe
             if (y0 + filled > h) {
                 filled = h - y0;
             }
-            look_apply_rgb888_sensor(look, s_strip, w, filled, y0, w, h, ORIENT_PORTRAIT); /* Task 4 */
+            look_apply_rgb888_sensor(look, s_strip, w, filled, y0, w, h, camera_orientation());
             if (!enc_feed(&e, s_strip, (size_t)w * filled * 3)) {
                 goto done;
             }
@@ -412,19 +411,21 @@ pipe_result_t pipeline_take_photo(look_t look, const pipe_meta_t *meta, pipe_cap
     int number = 0;
     if (sensor_jpeg && look == LOOK_NORMAL) {
         /* Best quality: the sensor's own JPEG, untouched. */
-        res = save_jpeg(fb->buf, fb->len, meta, EXIF_ORIENT_PORTRAIT, fb->width, fb->height, &number);
+        res = save_jpeg(fb->buf, fb->len, meta, orient_exif(camera_orientation()), fb->width, fb->height,
+                        &number);
         len = (int)fb->len;
         camera_capture_done(fb);
     } else {
-        /* Sensor-JPEG looks stay landscape (EXIF turns them); raw photos are rotated upright. */
+        /* Sensor-JPEG photos stay in sensor orientation (EXIF turns them); raw photos are
+           written upright. */
         const int w = sensor_jpeg ? camera_full_width() : camera_photo_width();
         const int h = sensor_jpeg ? camera_full_height() : camera_photo_height();
         res = sensor_jpeg ? encode_sensor_jpeg(fb, look, on_progress, ctx, &len)
                           : encode_raw(fb, look, on_progress, ctx, &len);
         camera_capture_done(fb);
         if (res == PIPE_OK) {
-            res = save_jpeg(s_obuf, len, meta, sensor_jpeg ? EXIF_ORIENT_PORTRAIT : EXIF_ORIENT_UPRIGHT, w, h,
-                            &number);
+            res = save_jpeg(s_obuf, len, meta, sensor_jpeg ? orient_exif(camera_orientation()) : EXIF_ORIENT_UPRIGHT,
+                            w, h, &number);
         }
     }
     if (res != PIPE_OK) {

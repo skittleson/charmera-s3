@@ -70,5 +70,3 @@ esp_err_t camera_photo_thumbnail(const camera_fb_t *fb, uint16_t *out);
 
 /* Turn a 320x240 sensor-orientation RGB565 image into the view for o. */
 void camera_rotate_to_view(const uint16_t *landscape_320x240, orient_t o, uint16_t *out);
-/* Same, for portrait (240x320 out). */
-void camera_rotate_to_portrait(const uint16_t *landscape_320x240, uint16_t *out_240x320);

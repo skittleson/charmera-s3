@@ -185,6 +185,35 @@ static void test_format_datetime(void)
     TEST_ASSERT_EQUAL_STRING("+00:00", off);
 }
 
+static void test_read_orientation_of_our_segment(void)
+{
+    static uint8_t jpg[2048];
+    exif_info_t in = sample(); /* description first, so Orientation is not the first tag */
+    for (int o = 1; o <= 8; o++) {
+        in.orientation = (uint16_t)o;
+        jpg[0] = 0xff;
+        jpg[1] = 0xd8;
+        const size_t n = exif_build(&in, jpg + 2, sizeof(jpg) - 2);
+        TEST_ASSERT_EQUAL(o, exif_read_orientation(jpg, n + 2));
+    }
+}
+
+static void test_read_orientation_other_files(void)
+{
+    /* Little-endian TIFF with Orientation 6 as the second entry. */
+    static const uint8_t le[] = {0xff, 0xd8, 0xff, 0xe1, 0x00, 0x2e, 'E', 'x', 'i', 'f', 0, 0,
+                                 'I', 'I', 0x2a, 0, 8, 0, 0, 0,  /* TIFF, IFD0 at 8 */
+                                 2, 0,                          /* 2 entries */
+                                 0x0f, 0x01, 2, 0, 1, 0, 0, 0, 'X', 0, 0, 0,
+                                 0x12, 0x01, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0,
+                                 0, 0, 0, 0};
+    TEST_ASSERT_EQUAL(6, exif_read_orientation(le, sizeof(le)));
+    static const uint8_t none[] = {0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0};
+    TEST_ASSERT_EQUAL(1, exif_read_orientation(none, sizeof(none)));
+    TEST_ASSERT_EQUAL(1, exif_read_orientation(le, 30)); /* truncated */
+    TEST_ASSERT_EQUAL(1, exif_read_orientation(NULL, 0));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -194,5 +223,7 @@ int main(void)
     RUN_TEST(test_data_offsets_are_even_and_inside);
     RUN_TEST(test_too_small_returns_0);
     RUN_TEST(test_format_datetime);
+    RUN_TEST(test_read_orientation_of_our_segment);
+    RUN_TEST(test_read_orientation_other_files);
     return UNITY_END();
 }

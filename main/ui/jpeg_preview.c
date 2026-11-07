@@ -1,68 +1,66 @@
 #include "jpeg_preview.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "board.h"
-#include "camera.h"
 #include "esp_jpeg_dec.h"
 #include "esp_log.h"
+#include "exif.h"
 #include "pipeline.h"
 
 static const char *TAG = "preview";
 
-static uint16_t *s_dec_out;
-static uint16_t *s_land;
-
-/* Largest size that fits w x h inside 240x320, keeps the aspect, is a multiple of 8 and
-   is no smaller than 1/8 of the source (the decoder's limits). */
-static bool fit(int w, int h, int *sw, int *sh)
-{
-    int tw = PREVIEW_W, th = h * PREVIEW_W / w;
-    if (th > PREVIEW_H) {
-        th = PREVIEW_H;
-        tw = w * PREVIEW_H / h;
-    }
-    tw &= ~7;
-    th &= ~7;
-    if (tw < 8 || th < 8 || tw * 8 < w || th * 8 < h || tw > w || th > h) {
-        return false;
-    }
-    *sw = tw;
-    *sh = th;
-    return true;
-}
+static uint16_t *s_dec_out; /* the photo decoded at its stored orientation, scaled */
 
 void jpeg_preview_reserve(void)
 {
     if (!s_dec_out) {
-        s_dec_out = jpeg_calloc_align(PREVIEW_W * PREVIEW_H * 2, 16);
-    }
-    if (!s_land) {
-        s_land = jpeg_calloc_align(320 * 240 * 2, 16);
+        s_dec_out = jpeg_calloc_align(PREVIEW_PIXELS * 2, 16);
     }
 }
 
-/* EXIF orientation from the APP1 segment we write right after SOI (0 if none). */
-static int exif_orientation(const uint8_t *b, size_t len)
+/* Stored pixel shown at display (x, y) for EXIF orientation e of a sw x sh image. */
+static void stored_at(int e, int x, int y, int sw, int sh, int *u, int *v)
 {
-    if (len < 34 || b[2] != 0xff || b[3] != 0xe1 || memcmp(b + 6, "Exif\0\0MM", 8) != 0) {
-        return 0;
+    switch (e) {
+    case 2: *u = sw - 1 - x; *v = y; break;
+    case 3: *u = sw - 1 - x; *v = sh - 1 - y; break;
+    case 4: *u = x; *v = sh - 1 - y; break;
+    case 5: *u = y; *v = x; break;
+    case 6: *u = y; *v = sh - 1 - x; break;
+    case 7: *u = sw - 1 - y; *v = sh - 1 - x; break;
+    case 8: *u = sw - 1 - y; *v = x; break;
+    default: *u = x; *v = y; break;
     }
-    /* SOI(2) APP1(2) len(2) "Exif\0\0"(6) TIFF header(8) -> IFD0 entry count at 20,
-       first entry's tag at 22, its SHORT value at 30. */
-    if (b[22] == 0x01 && b[23] == 0x12) {
-        return b[31];
-    }
-    return 0;
 }
 
-esp_err_t jpeg_preview_load(const char *path, uint16_t *out)
+/* Decoded size (stored orientation) for a w x h photo shown turned (or not) inside
+   out_w x out_h: keeps the aspect, multiples of 8, at least 1/8 scale (decoder limits). */
+static bool fit(int w, int h, bool turned, int out_w, int out_h, int *sw, int *sh)
+{
+    const int dw = turned ? h : w, dh = turned ? w : h; /* as shown */
+    int tw = out_w, th = dh * out_w / dw;
+    if (th > out_h) {
+        th = out_h;
+        tw = dw * out_h / dh;
+    }
+    int a = (turned ? th : tw) & ~7, b = (turned ? tw : th) & ~7;
+    if (a < 8 || b < 8 || a * 8 < w || b * 8 < h || a > w || b > h) {
+        return false;
+    }
+    *sw = a;
+    *sh = b;
+    return true;
+}
+
+esp_err_t jpeg_preview_load(const char *path, uint16_t *out, int out_w, int out_h)
 {
     size_t cap;
     uint8_t *buf = pipeline_scratch(&cap);
     jpeg_preview_reserve();
-    if (!buf || !s_dec_out) {
+    if (!buf || !s_dec_out || out_w * out_h > PREVIEW_PIXELS) {
         return ESP_ERR_NO_MEM;
     }
     board_spi_lock();
@@ -76,7 +74,8 @@ esp_err_t jpeg_preview_load(const char *path, uint16_t *out)
     if (len == 0 || len == cap) {
         return ESP_FAIL;
     }
-    const bool portrait_tag = exif_orientation(buf, len) == 8;
+    const int e = exif_read_orientation(buf, len);
+    const bool turned = e >= 5; /* 5..8 swap width and height */
 
     jpeg_dec_config_t cfg = DEFAULT_JPEG_DEC_CONFIG();
     cfg.output_type = JPEG_PIXEL_FORMAT_RGB565_LE;
@@ -86,52 +85,38 @@ esp_err_t jpeg_preview_load(const char *path, uint16_t *out)
     }
     jpeg_dec_io_t io = {.inbuf = buf, .inbuf_len = (int)len};
     jpeg_dec_header_info_t info;
-    esp_err_t res = ESP_FAIL;
     int sw = 0, sh = 0;
-    if (portrait_tag && jpeg_dec_parse_header(dec, &io, &info) == JPEG_ERR_OK) {
-        /* Stored landscape, shown portrait: decode to 320x240 and turn it. */
-        jpeg_dec_close(dec);
-        dec = NULL;
-        if (!s_land) {
-            s_land = jpeg_calloc_align(320 * 240 * 2, 16);
-        }
-        cfg.scale.width = info.width == 320 ? 0 : 320;
-        cfg.scale.height = info.height == 240 ? 0 : 240;
-        if (s_land && jpeg_dec_open(&cfg, &dec) == JPEG_ERR_OK) {
-            io = (jpeg_dec_io_t){.inbuf = buf, .inbuf_len = (int)len, .outbuf = (uint8_t *)s_land};
-            if (jpeg_dec_parse_header(dec, &io, &info) == JPEG_ERR_OK && jpeg_dec_process(dec, &io) == JPEG_ERR_OK) {
-                camera_rotate_to_portrait(s_land, out);
-                res = ESP_OK;
-            }
-            jpeg_dec_close(dec);
-        }
-        return res;
-    }
-    if (jpeg_dec_parse_header(dec, &io, &info) == JPEG_ERR_OK && fit(info.width, info.height, &sw, &sh)) {
-        jpeg_dec_close(dec);
-        cfg.scale.width = (sw == info.width) ? 0 : sw;
-        cfg.scale.height = (sh == info.height) ? 0 : sh;
-        if (jpeg_dec_open(&cfg, &dec) == JPEG_ERR_OK) {
-            io = (jpeg_dec_io_t){.inbuf = buf, .inbuf_len = (int)len, .outbuf = (uint8_t *)s_dec_out};
-            if (jpeg_dec_parse_header(dec, &io, &info) == JPEG_ERR_OK && jpeg_dec_process(dec, &io) == JPEG_ERR_OK) {
-                res = ESP_OK;
-            }
-        } else {
-            dec = NULL;
-        }
-    } else {
+    const bool ok_header = jpeg_dec_parse_header(dec, &io, &info) == JPEG_ERR_OK;
+    jpeg_dec_close(dec);
+    dec = NULL;
+    if (!ok_header || !fit(info.width, info.height, turned, out_w, out_h, &sw, &sh)) {
         ESP_LOGW(TAG, "%s: unsupported size %dx%d", path, info.width, info.height);
+        return ESP_FAIL;
     }
-    if (dec) {
+    cfg.scale.width = (sw == info.width) ? 0 : sw;
+    cfg.scale.height = (sh == info.height) ? 0 : sh;
+    esp_err_t res = ESP_FAIL;
+    if (jpeg_dec_open(&cfg, &dec) == JPEG_ERR_OK) {
+        io = (jpeg_dec_io_t){.inbuf = buf, .inbuf_len = (int)len, .outbuf = (uint8_t *)s_dec_out};
+        if (jpeg_dec_parse_header(dec, &io, &info) == JPEG_ERR_OK && jpeg_dec_process(dec, &io) == JPEG_ERR_OK) {
+            res = ESP_OK;
+        }
         jpeg_dec_close(dec);
     }
     if (res != ESP_OK) {
         return res;
     }
-    memset(out, 0, PREVIEW_W * PREVIEW_H * 2);
-    const int ox = (PREVIEW_W - sw) / 2, oy = (PREVIEW_H - sh) / 2;
-    for (int y = 0; y < sh; y++) {
-        memcpy(out + (size_t)(oy + y) * PREVIEW_W + ox, s_dec_out + (size_t)y * sw, sw * 2);
+    /* Turn it upright into the middle of the output. */
+    memset(out, 0, (size_t)out_w * out_h * 2);
+    const int dw = turned ? sh : sw, dh = turned ? sw : sh;
+    const int ox = (out_w - dw) / 2, oy = (out_h - dh) / 2;
+    for (int y = 0; y < dh; y++) {
+        uint16_t *row = out + (size_t)(oy + y) * out_w + ox;
+        for (int x = 0; x < dw; x++) {
+            int u, v;
+            stored_at(e, x, y, sw, sh, &u, &v);
+            row[x] = s_dec_out[(size_t)v * sw + u];
+        }
     }
     return ESP_OK;
 }

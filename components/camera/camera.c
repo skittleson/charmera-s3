@@ -285,11 +285,6 @@ void camera_rotate_to_view(const uint16_t *land, orient_t o, uint16_t *out)
     }
 }
 
-void camera_rotate_to_portrait(const uint16_t *land, uint16_t *out)
-{
-    camera_rotate_to_view(land, ORIENT_PORTRAIT, out);
-}
-
 /* Decode a JPEG to 320x240 RGB565 (scale 1/1..1/8 as needed). */
 static bool decode_320x240(const uint8_t *buf, size_t len, int w, int h, uint16_t *out)
 {

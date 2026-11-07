@@ -331,7 +331,8 @@ static void shoot(void)
     }
     char desc[96], comment[160];
     snprintf(desc, sizeof(desc), "Charmera-S3 photo, look %s", look_name(s.current));
-    snprintf(comment, sizeof(comment), "mode=single; look=%s; camera=%s", look_name(s.current), camera_sensor_name());
+    snprintf(comment, sizeof(comment), "mode=single; look=%s; camera=%s; orientation=%s", look_name(s.current),
+             camera_sensor_name(), orient_name(orientation_current()));
     const pipe_meta_t meta = {desc, comment};
     int number = 0;
     const pipe_result_t r = pipeline_take_photo(s.current, &meta, on_captured, on_progress, NULL, &number);
@@ -452,9 +453,9 @@ static void lapse_frame(void)
     snprintf(desc, sizeof(desc), "Time-lapse %s frame %u, every %s, look %s", s.lapse.folder, frame,
              lapse_interval_name(s.lapse.interval), look_name(s.current));
     snprintf(comment, sizeof(comment),
-             "mode=timelapse; folder=%s; frame=%u; interval_s=%u; elapsed_s=%u; look=%s; camera=%s", s.lapse.folder,
-             frame, every_s, (unsigned)((now_ms() - s.lapse.start_ms) / 1000), look_name(s.current),
-             camera_sensor_name());
+             "mode=timelapse; folder=%s; frame=%u; interval_s=%u; elapsed_s=%u; look=%s; camera=%s; orientation=%s",
+             s.lapse.folder, frame, every_s, (unsigned)((now_ms() - s.lapse.start_ms) / 1000), look_name(s.current),
+             camera_sensor_name(), orient_name(orientation_current()));
     const pipe_meta_t meta = {desc, comment};
     int number = 0;
     const pipe_result_t r = pipeline_take_photo(s.current, &meta, on_captured, NULL, NULL, &number);

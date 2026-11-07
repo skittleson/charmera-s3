@@ -13,9 +13,8 @@ static const char *TAG = "ui_gallery";
 
 static uint16_t *s_px;
 static lv_image_dsc_t s_dsc = {
-    .header = {.magic = LV_IMAGE_HEADER_MAGIC, .cf = LV_COLOR_FORMAT_RGB565, .w = PREVIEW_W,
-               .h = PREVIEW_H, .stride = PREVIEW_W * 2},
-    .data_size = PREVIEW_W * PREVIEW_H * 2,
+    .header = {.magic = LV_IMAGE_HEADER_MAGIC, .cf = LV_COLOR_FORMAT_RGB565},
+    .data_size = PREVIEW_PIXELS * 2,
 };
 
 static struct {
@@ -45,7 +44,7 @@ static void show_current(void)
     }
     char path[64];
     storage_photo_path(s.nums[s.index], path, sizeof(path));
-    const esp_err_t err = jpeg_preview_load(path, s_px);
+    const esp_err_t err = jpeg_preview_load(path, s_px, s_dsc.header.w, s_dsc.header.h);
     char pos[40];
     snprintf(pos, sizeof(pos), "%u / %u   IMG_%04d", (unsigned)(s.count - s.index), (unsigned)s.count,
              s.nums[s.index]);
@@ -97,7 +96,7 @@ static lv_obj_t *label(lv_obj_t *parent, const lv_font_t *font)
 void ui_gallery_reserve(void)
 {
     if (!s_px) {
-        s_px = heap_caps_calloc(1, PREVIEW_W * PREVIEW_H * 2, MALLOC_CAP_SPIRAM);
+        s_px = heap_caps_calloc(1, PREVIEW_PIXELS * 2, MALLOC_CAP_SPIRAM);
         s_dsc.data = (const uint8_t *)s_px;
     }
     jpeg_preview_reserve();
@@ -108,6 +107,9 @@ static void enter(lv_obj_t *scr)
     ui_gallery_reserve();
     memset(&s, 0, sizeof(s));
     s.img = lv_image_create(scr);
+    s_dsc.header.w = display_width(); /* the screen in its current orientation */
+    s_dsc.header.h = display_height();
+    s_dsc.header.stride = s_dsc.header.w * 2;
     lv_image_set_src(s.img, &s_dsc);
     lv_obj_center(s.img);
     s.msg = label(scr, &lv_font_montserrat_20);
