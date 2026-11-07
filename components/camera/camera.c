@@ -19,9 +19,6 @@
 #define PIN_HREF  4
 #define PIN_PCLK  9
 
-/* The viewfinder is the sensor frame turned 90 degrees to be upright in the portrait
-   grip (USB-C down). Flip if it shows upside down. */
-#define ROTATE_CCW 1
 
 /* OV2640 sensor-bank registers (bank bit = 0x100 for get_reg/set_reg). */
 #define REG_GAIN  0x100
@@ -67,6 +64,7 @@ static bool s_has_af;
 static bool s_active = true; /* sensor powered and streaming */
 static uint16_t *s_preview;
 static uint16_t *s_land; /* 320x240 decoded JPEG preview (OV5640) */
+static orient_t s_orient = ORIENT_PORTRAIT; /* how the camera is held: view <-> sensor */
 static jpeg_dec_handle_t s_prev_dec;
 static look_t s_look = LOOK_NORMAL;
 /* OV5640 JPEG quality in use (esp32-camera scale, lower = better). Starts at the
@@ -240,39 +238,56 @@ bool camera_full_is_jpeg(void)
     return s_prof && s_prof->jpeg;
 }
 
+void camera_set_orientation(orient_t o)
+{
+    s_orient = o;
+}
+
+orient_t camera_orientation(void)
+{
+    return s_orient;
+}
+
+int camera_preview_w(void)
+{
+    return s_orient == ORIENT_PORTRAIT ? 240 : 320;
+}
+
+int camera_preview_h(void)
+{
+    return s_orient == ORIENT_PORTRAIT ? 320 : 240;
+}
+
 int camera_photo_width(void)
 {
-    return camera_full_height();
+    int w, h;
+    orient_view_size(s_orient, camera_full_width(), camera_full_height(), &w, &h);
+    return w;
 }
 
 int camera_photo_height(void)
 {
-    return camera_full_width();
+    int w, h;
+    orient_view_size(s_orient, camera_full_width(), camera_full_height(), &w, &h);
+    return h;
 }
 
-/* Portrait (px, py) -> landscape (sx, sy) for a sw x sh landscape image. */
-static inline void portrait_to_land(int px, int py, int sw, int sh, int *sx, int *sy)
+void camera_rotate_to_view(const uint16_t *land, orient_t o, uint16_t *out)
 {
-#if ROTATE_CCW
-    (void)sh;
-    *sx = sw - 1 - py;
-    *sy = px;
-#else
-    (void)sw;
-    *sx = py;
-    *sy = sh - 1 - px;
-#endif
+    int vw, vh;
+    orient_view_size(o, 320, 240, &vw, &vh);
+    for (int dy = 0; dy < vh; dy++) {
+        for (int dx = 0; dx < vw; dx++) {
+            int sx, sy;
+            orient_view_to_sensor(o, dx, dy, 320, 240, &sx, &sy);
+            out[dy * vw + dx] = land[sy * 320 + sx];
+        }
+    }
 }
 
 void camera_rotate_to_portrait(const uint16_t *land, uint16_t *out)
 {
-    for (int dy = 0; dy < CAMERA_PREVIEW_H; dy++) {
-        for (int dx = 0; dx < CAMERA_PREVIEW_W; dx++) {
-            int sx, sy;
-            portrait_to_land(dx, dy, 320, 240, &sx, &sy);
-            out[dy * CAMERA_PREVIEW_W + dx] = land[sy * 320 + sx];
-        }
-    }
+    camera_rotate_to_view(land, ORIENT_PORTRAIT, out);
 }
 
 /* Decode a JPEG to 320x240 RGB565 (scale 1/1..1/8 as needed). */
@@ -314,7 +329,7 @@ uint16_t *camera_preview_frame(void)
         }
         esp_camera_fb_return(fb);
         if (ok) {
-            camera_rotate_to_portrait(s_land, s_preview);
+            camera_rotate_to_view(s_land, s_orient, s_preview);
         }
         return ok ? s_preview : NULL;
     }
@@ -322,12 +337,13 @@ uint16_t *camera_preview_frame(void)
     if (sw == 320 && sh == 240 && fb->len >= (size_t)sw * sh * 2) {
         /* Big-endian RGB565 from the sensor. */
         const uint8_t *src = fb->buf;
-        for (int dy = 0; dy < CAMERA_PREVIEW_H; dy++) {
-            for (int dx = 0; dx < CAMERA_PREVIEW_W; dx++) {
+        const int vw = camera_preview_w(), vh = camera_preview_h();
+        for (int dy = 0; dy < vh; dy++) {
+            for (int dx = 0; dx < vw; dx++) {
                 int sx, sy;
-                portrait_to_land(dx, dy, sw, sh, &sx, &sy);
+                orient_view_to_sensor(s_orient, dx, dy, sw, sh, &sx, &sy);
                 const uint8_t *p = src + ((size_t)sy * sw + sx) * 2;
-                s_preview[dy * CAMERA_PREVIEW_W + dx] = (uint16_t)((p[0] << 8) | p[1]);
+                s_preview[dy * vw + dx] = (uint16_t)((p[0] << 8) | p[1]);
             }
         }
         ok = true;
@@ -348,14 +364,27 @@ static inline void raw_rgb(const camera_fb_t *fb, int sx, int sy, uint8_t *rgb)
 
 void camera_photo_rows_rgb888(const camera_fb_t *fb, int y0, int rows, uint8_t *out)
 {
-    /* Portrait row py comes from sensor column sx, so walk each sensor row once and
-       read the strip's span of it contiguously (much kinder to the PSRAM cache). */
-    const int sw = fb->width, sh = fb->height, w = sh;
-    for (int px = 0; px < w; px++) {
-        for (int r = 0; r < rows; r++) {
+    const int sw = fb->width, sh = fb->height;
+    int w, h;
+    orient_view_size(s_orient, sw, sh, &w, &h);
+    if (s_orient == ORIENT_PORTRAIT) {
+        /* Portrait row py comes from sensor column sx, so walk each sensor row once and
+           read the strip's span of it contiguously (much kinder to the PSRAM cache). */
+        for (int px = 0; px < w; px++) {
+            for (int r = 0; r < rows; r++) {
+                int sx, sy;
+                orient_view_to_sensor(s_orient, px, y0 + r, sw, sh, &sx, &sy);
+                raw_rgb(fb, sx, sy, out + ((size_t)r * w + px) * 3);
+            }
+        }
+        return;
+    }
+    /* Landscape: each view row is one sensor row, forwards or (turned 180) backwards. */
+    for (int r = 0; r < rows; r++) {
+        for (int vx = 0; vx < w; vx++) {
             int sx, sy;
-            portrait_to_land(px, y0 + r, sw, sh, &sx, &sy);
-            raw_rgb(fb, sx, sy, out + ((size_t)r * w + px) * 3);
+            orient_view_to_sensor(s_orient, vx, y0 + r, sw, sh, &sx, &sy);
+            raw_rgb(fb, sx, sy, out + ((size_t)r * w + vx) * 3);
         }
     }
 }
@@ -366,17 +395,20 @@ esp_err_t camera_photo_thumbnail(const camera_fb_t *fb, uint16_t *out)
         if (!s_land || !decode_320x240(fb->buf, fb->len, fb->width, fb->height, s_land)) {
             return ESP_FAIL;
         }
-        camera_rotate_to_portrait(s_land, out);
+        camera_rotate_to_view(s_land, s_orient, out);
         return ESP_OK;
     }
-    const int sw = fb->width, sh = fb->height, pw = sh, ph = sw;
-    for (int dy = 0; dy < CAMERA_PREVIEW_H; dy++) {
-        for (int dx = 0; dx < CAMERA_PREVIEW_W; dx++) {
+    const int sw = fb->width, sh = fb->height;
+    int pw, ph;
+    orient_view_size(s_orient, sw, sh, &pw, &ph);
+    const int vw = camera_preview_w(), vh = camera_preview_h();
+    for (int dy = 0; dy < vh; dy++) {
+        for (int dx = 0; dx < vw; dx++) {
             int sx, sy;
-            portrait_to_land(dx * pw / CAMERA_PREVIEW_W, dy * ph / CAMERA_PREVIEW_H, sw, sh, &sx, &sy);
+            orient_view_to_sensor(s_orient, dx * pw / vw, dy * ph / vh, sw, sh, &sx, &sy);
             uint8_t rgb[3];
             raw_rgb(fb, sx, sy, rgb);
-            out[dy * CAMERA_PREVIEW_W + dx] =
+            out[dy * vw + dx] =
                 (uint16_t)(((rgb[0] >> 3) << 11) | ((rgb[1] >> 2) << 5) | (rgb[2] >> 3));
         }
     }

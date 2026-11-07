@@ -7,6 +7,7 @@
 #include "display.h"
 #include "input.h"
 #include "pipeline.h"
+#include "orientation.h"
 #include "power.h"
 #include "remote_bridge.h"
 #include "settings.h"
@@ -33,6 +34,7 @@ void app_main(void)
     }
     ESP_LOGI(TAG, "camera: %s", camera_sensor_name());
     ESP_ERROR_CHECK(pipeline_init("charmera-s3 " APP_VERSION));
+    orientation_init();
     ui_reserve();
     storage_status();
     power_init();

@@ -1,6 +1,7 @@
 #include "settings.h"
 
 #include "lapse_logic.h"
+#include "orient.h"
 #include "nvs.h"
 
 #define NS "charmera"
@@ -9,6 +10,7 @@ static uint8_t s_brightness = 80;
 static uint8_t s_look = LOOK_NORMAL;
 static uint8_t s_level;
 static uint8_t s_ble = 1;
+static uint8_t s_orient; /* portrait */
 static uint8_t s_lapse = LAPSE_INTERVAL_DEFAULT;
 
 static void save_u8(const char *key, uint8_t v)
@@ -29,6 +31,7 @@ void settings_load(void)
         nvs_get_u8(h, "look", &s_look);
         nvs_get_u8(h, "level", &s_level);
         nvs_get_u8(h, "ble", &s_ble);
+        nvs_get_u8(h, "orient", &s_orient);
         nvs_get_u8(h, "lapse", &s_lapse);
         nvs_close(h);
     }
@@ -37,6 +40,9 @@ void settings_load(void)
     }
     if (s_look >= LOOK_COUNT) {
         s_look = LOOK_NORMAL;
+    }
+    if (s_orient >= ORIENT_SETTING_COUNT) {
+        s_orient = ORIENT_PORTRAIT;
     }
     if (s_lapse >= LAPSE_INTERVAL_COUNT) {
         s_lapse = LAPSE_INTERVAL_DEFAULT;
@@ -101,4 +107,15 @@ void settings_set_bluetooth(bool on)
 {
     s_ble = on ? 1 : 0;
     save_u8("ble", s_ble);
+}
+
+int settings_orientation(void)
+{
+    return s_orient;
+}
+
+void settings_set_orientation(int setting)
+{
+    s_orient = (setting >= 0 && setting < ORIENT_SETTING_COUNT) ? (uint8_t)setting : ORIENT_PORTRAIT;
+    save_u8("orient", s_orient);
 }

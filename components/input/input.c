@@ -180,6 +180,14 @@ float input_roll_deg(void)
     return s_roll;
 }
 
+void input_gravity(float *down, float *side, float *face)
+{
+    const int16_t r[3] = {s_raw[0], s_raw[1], s_raw[2]};
+    *down = (float)r[INPUT_GRAVITY_AXIS];
+    *side = INPUT_ROLL_SIGN * (float)r[INPUT_ROLL_AXIS];
+    *face = (float)r[3 - INPUT_ROLL_AXIS - INPUT_GRAVITY_AXIS];
+}
+
 void input_accel_raw(int16_t out[3])
 {
     out[0] = s_raw[0];

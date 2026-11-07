@@ -20,6 +20,7 @@ static const ui_screen_t *const SCREENS[] = {
 };
 
 static const ui_screen_t *s_current;
+static ui_screen_id_t s_current_id;
 static volatile int s_pending = -1;
 
 /* ---------- toast ---------- */
@@ -124,7 +125,7 @@ void ui_menu_open(const char *title, const char *const *items, int count, int in
     memset(&s_menu, 0, sizeof(s_menu));
     lv_obj_t *box = lv_obj_create(lv_layer_top());
     lv_obj_set_size(box, 220, LV_SIZE_CONTENT);
-    lv_obj_set_style_max_height(box, 300, 0);
+    lv_obj_set_style_max_height(box, lv_pct(92), 0); /* fits portrait and landscape */
     lv_obj_center(box);
     lv_obj_set_style_bg_color(box, lv_color_hex(0x161616), 0);
     lv_obj_set_style_bg_opa(box, LV_OPA_90, 0);
@@ -220,6 +221,7 @@ static void switch_to(ui_screen_id_t id)
     lv_obj_set_style_bg_color(scr, UI_COLOR_BG, 0);
     lv_obj_set_scrollable(scr, false);
     s_current = SCREENS[id];
+    s_current_id = id;
     s_current->enter(scr);
     lv_screen_load(scr);
     if (old && old != scr) {
@@ -232,6 +234,14 @@ static void switch_to(ui_screen_id_t id)
 void ui_show(ui_screen_id_t id)
 {
     s_pending = id;
+}
+
+void ui_relayout(void)
+{
+    if (s_menu.box) {
+        ui_menu_dismiss(); /* sized for the old orientation */
+    }
+    s_pending = s_current_id; /* switch_to runs even for the same screen */
 }
 
 void ui_show_now(ui_screen_id_t id)

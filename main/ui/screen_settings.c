@@ -6,6 +6,7 @@
 #include "display.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "orientation.h"
 #include "remote_bridge.h"
 #include "settings.h"
 #include "storage.h"
@@ -13,7 +14,7 @@
 
 static const char *TAG = "ui_settings";
 
-enum { ROW_BRIGHTNESS, ROW_LEVEL, ROW_BLUETOOTH, ROW_FORMAT, ROW_BACK, ROW_COUNT };
+enum { ROW_BRIGHTNESS, ROW_LEVEL, ROW_ORIENTATION, ROW_BLUETOOTH, ROW_FORMAT, ROW_BACK, ROW_COUNT };
 
 static struct {
     lv_obj_t *info;
@@ -69,6 +70,10 @@ static void paint(void)
              (unsigned)settings_brightness());
     lv_label_set_text(s.rows[ROW_BRIGHTNESS], t);
     lv_label_set_text(s.rows[ROW_LEVEL], settings_level() ? "Level  On" : "Level  Off");
+    static const char *const ORIENT_LABELS[ORIENT_SETTING_COUNT] = {
+        "Orientation  Portrait", "Orientation  Landscape, USB-C right", "Orientation  Landscape, USB-C left",
+        "Orientation  Auto"};
+    lv_label_set_text(s.rows[ROW_ORIENTATION], ORIENT_LABELS[settings_orientation()]);
     lv_label_set_text(s.rows[ROW_BLUETOOTH], settings_bluetooth() ? "Bluetooth  On" : "Bluetooth  Off");
     lv_label_set_text(s.rows[ROW_FORMAT], storage_status() == STORAGE_OK ? "Format card" : "Format card (no card)");
     lv_label_set_text(s.rows[ROW_BACK], "Back to camera");
@@ -90,9 +95,16 @@ static void repaint(void)
     }
 }
 
+/* Row to select when the screen is rebuilt after turning (else the first row). */
+static int s_keep_sel = -1;
+
 static void enter(lv_obj_t *scr)
 {
     memset(&s, 0, sizeof(s));
+    if (s_keep_sel >= 0) {
+        s.sel = s_keep_sel;
+        s_keep_sel = -1;
+    }
     lv_obj_set_scrollable(scr, true);
     lv_obj_set_scrollbar_mode(scr, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_COLUMN);
@@ -147,6 +159,17 @@ static void activate(void)
     case ROW_LEVEL:
         settings_set_level(!settings_level());
         break;
+    case ROW_ORIENTATION:
+        /* Hold steps Portrait -> Landscape right -> Landscape left -> Auto. */
+    {
+        const orient_t before = orientation_current();
+        settings_set_orientation((settings_orientation() + 1) % ORIENT_SETTING_COUNT);
+        orientation_setting_changed(); /* may turn the screen; Settings is then rebuilt */
+        if (orientation_current() != before) {
+            s_keep_sel = ROW_ORIENTATION;
+        }
+        break;
+    }
     case ROW_BLUETOOTH:
         settings_set_bluetooth(!settings_bluetooth());
         remote_bridge_set_enabled(settings_bluetooth());

@@ -22,3 +22,6 @@ void settings_set_lapse_interval(int index);
 
 bool settings_bluetooth(void); /* Bluetooth remote, default on */
 void settings_set_bluetooth(bool on);
+
+int settings_orientation(void); /* 0 portrait, 1 landscape right, 2 landscape left, 3 auto */
+void settings_set_orientation(int setting);

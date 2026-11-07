@@ -89,6 +89,40 @@ esp_err_t display_init(void)
     return ESP_OK;
 }
 
+/* LVGL names a rotation by how the hardware is turned clockwise. From the portrait grip
+   (USB-C down), turning the camera clockwise puts USB-C on the left.
+   NOT yet checked on the board: if a landscape grip shows upside down, swap 90/270. */
+static lv_display_rotation_t rotation_for(orient_t o)
+{
+    switch (o) {
+    case ORIENT_LAND_LEFT: return LV_DISPLAY_ROTATION_90;
+    case ORIENT_LAND_RIGHT: return LV_DISPLAY_ROTATION_270;
+    default: return LV_DISPLAY_ROTATION_0;
+    }
+}
+
+void display_set_orientation(orient_t o)
+{
+    if (!s_disp || !display_lock(500)) {
+        return;
+    }
+    if (lv_display_get_rotation(s_disp) != rotation_for(o)) {
+        lv_display_set_rotation(s_disp, rotation_for(o)); /* the port swaps/mirrors the panel */
+        ESP_LOGI(TAG, "rotation %d (%s)", (int)rotation_for(o), orient_name(o));
+    }
+    display_unlock();
+}
+
+int display_width(void)
+{
+    return s_disp ? lv_display_get_horizontal_resolution(s_disp) : BOARD_LCD_W;
+}
+
+int display_height(void)
+{
+    return s_disp ? lv_display_get_vertical_resolution(s_disp) : BOARD_LCD_H;
+}
+
 bool display_lock(int timeout_ms)
 {
     return lvgl_port_lock(timeout_ms < 0 ? 0 : timeout_ms);

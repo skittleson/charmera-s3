@@ -21,3 +21,7 @@ void input_set_tilt_enabled(bool on);
 /* Latest roll angle in degrees (+ = tilted right), for diagnostics. */
 float input_roll_deg(void);
 void input_accel_raw(int16_t out[3]);
+/* Latest gravity in the portrait axes (raw units): down = along the portrait vertical
+   (positive when held portrait, NOT yet checked on the board), side = along the
+   portrait horizontal (+ = tilted clockwise), face = through the screen. */
+void input_gravity(float *down, float *side, float *face);

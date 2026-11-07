@@ -14,22 +14,22 @@
 #include "lapse_logic.h"
 #include "looks.h"
 #include "pipeline.h"
+#include "orientation.h"
 #include "power.h"
 #include "remote_bridge.h"
 #include "settings.h"
 #include "storage.h"
 #include "ui.h"
 
-#define VF_W CAMERA_PREVIEW_W
-#define VF_H CAMERA_PREVIEW_H
+/* Viewfinder: 240x320 or 320x240 by orientation; the buffer is the same size. */
+#define VF_BYTES (CAMERA_PREVIEW_PIXELS * 2)
 
 static const char *TAG = "ui_cam";
 
 static uint16_t *s_vf; /* what the image widget shows */
 static lv_image_dsc_t s_dsc = {
-    .header = {.magic = LV_IMAGE_HEADER_MAGIC, .cf = LV_COLOR_FORMAT_RGB565, .w = VF_W, .h = VF_H,
-               .stride = VF_W * 2},
-    .data_size = VF_W * VF_H * 2,
+    .header = {.magic = LV_IMAGE_HEADER_MAGIC, .cf = LV_COLOR_FORMAT_RGB565},
+    .data_size = VF_BYTES,
 };
 
 #define HINT_PHOTO "press: shoot   hold: menu"
@@ -140,7 +140,7 @@ static lv_obj_t *overlay_label(lv_obj_t *parent, const lv_font_t *font)
 void ui_camera_reserve(void)
 {
     if (!s_vf) {
-        s_vf = heap_caps_calloc(1, VF_W * VF_H * 2, MALLOC_CAP_SPIRAM);
+        s_vf = heap_caps_calloc(1, VF_BYTES, MALLOC_CAP_SPIRAM);
         s_dsc.data = (const uint8_t *)s_vf;
     }
 }
@@ -155,6 +155,9 @@ static void enter(lv_obj_t *scr)
     camera_set_look(s.current);
 
     s.img = lv_image_create(scr);
+    s_dsc.header.w = camera_preview_w();
+    s_dsc.header.h = camera_preview_h();
+    s_dsc.header.stride = s_dsc.header.w * 2;
     lv_image_set_src(s.img, &s_dsc);
     lv_obj_center(s.img);
 
@@ -187,7 +190,7 @@ static void enter(lv_obj_t *scr)
     s.level = lv_line_create(scr);
     lv_obj_set_style_line_width(s.level, 3, 0);
     lv_obj_set_style_line_rounded(s.level, true, 0);
-    lv_obj_set_size(s.level, VF_W, VF_H);
+    lv_obj_set_size(s.level, display_width(), display_height());
     lv_obj_set_pos(s.level, 0, 0);
     if (!settings_level()) {
         lv_obj_set_hidden(s.level, true);
@@ -221,9 +224,13 @@ static void level_step(void)
     if (!settings_level() || s.busy) {
         return;
     }
-    const float deg = input_roll_deg();
+    float down, side, face;
+    input_gravity(&down, &side, &face);
+    /* Lying flat or aimed straight up/down: a left/right tilt has no meaning. */
+    const bool lying = fabsf(face) > 0.7f * sqrtf(down * down + side * side + face * face);
+    const float deg = lying ? 0.0f : orient_roll_deg(orientation_current(), down, side);
     const float rad = -deg * 3.14159265f / 180.0f;
-    const float half = 70.0f, cx = VF_W / 2.0f, cy = VF_H / 2.0f;
+    const float half = 70.0f, cx = display_width() / 2.0f, cy = display_height() / 2.0f;
     const float dx = half * cosf(rad), dy = half * sinf(rad);
     s.level_pts[0] = (lv_point_precise_t){cx - dx, cy - dy};
     s.level_pts[1] = (lv_point_precise_t){cx + dx, cy + dy};
@@ -256,10 +263,10 @@ static void viewfinder_step(void)
         vTaskDelay(pdMS_TO_TICKS(20)); /* no camera: don't spin the UI task */
         return;
     }
-    look_apply_rgb565(s.current, f, VF_W, VF_H);
+    look_apply_rgb565(s.current, f, camera_preview_w(), camera_preview_h());
     level_step();
     if (display_lock(50)) {
-        memcpy(s_vf, f, VF_W * VF_H * 2);
+        memcpy(s_vf, f, VF_BYTES);
         lv_obj_invalidate(s.img);
         display_unlock();
     }
@@ -281,7 +288,7 @@ static void set_status(const char *text)
 static void on_captured(const uint16_t *thumb, void *ctx)
 {
     if (display_lock(200)) {
-        memcpy(s_vf, thumb, VF_W * VF_H * 2);
+        memcpy(s_vf, thumb, VF_BYTES);
         lv_obj_invalidate(s.img);
         lv_label_set_text(s.status, "Saving...");
         display_unlock();
