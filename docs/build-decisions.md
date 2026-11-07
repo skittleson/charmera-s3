@@ -62,6 +62,14 @@ Every call made on the owner's behalf during the build, in order, from the build
 - Owner request: the page is a PWA (manifest, service worker with stale-while-revalidate cache, icons, Install button). Headless Chrome: installable with no errors, 11 files cached, loads with the network off.
 - Known: the "photos left" estimate drifts after time-lapse runs because small frames lower the average photo size.
 
+## EXIF (owner: "all possible EXIF", "skip [questions] and go")
+
+- Ruling: every photo gets a full EXIF APP1 (big-endian, IFD0 + Exif IFD) from a host-tested builder (components/pipeline/src/exif.c); ExifTool -validate reports OK on a real JPEG with it inserted. Previously OV5640 photos had only Orientation and OV2640 photos had no EXIF.
+- Ruling: time-lapse frames identify themselves in ImageDescription ("Time-lapse 101LAPSE frame 12, every 10 s, look Normal") and in UserComment as key=value fields; single photos say mode=single.
+- Ruling: no RTC, so the web remote sends `time <epoch> <utc offset min>` on every connect; dates are omitted (not faked) until the clock is set; the clock is lost at power-off. Status gains `clock`.
+- Ruling: exposure time, ISO, focal length and aperture are omitted: the sensors' register values can't be turned into accurate EXIF units without per-mode timing maths, and the modules' lens specs are unknown. SerialNumber = the board's MAC.
+- Not yet run on the board (owner skipped); the service worker cache was bumped to v2 so installed PWAs pick up the new page.
+
 ## Deferred minor issues (from the final review)
 
 - "card full" estimate can still fail mid-write on the last photo (now returns Card full via free-space check before writing).

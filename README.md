@@ -61,6 +61,7 @@ you turn it on.
 - **Gallery:** newest first. Step back through your shots and delete one or all. Delete prompts always have Cancel selected first.
 - **Settings:** card size, free and used space, photo count, battery, brightness, an
   on-screen level, Bluetooth on/off, and card format.
+- **Full EXIF:** camera, date and time (clock set by the Bluetooth remote), orientation, size, look, and time-lapse run and frame.
 - **Safe saves.** Every photo is written to a temporary file, synced, then renamed, so pulling the card or losing power never leaves a half-written `IMG_xxxx.JPG`.
 - **Battery-friendly.** The screen dims after 30 s and switches off after 3 min, and the camera sensor only runs while the viewfinder is on screen.
 - **Standard card layout:** `DCIM/100CHARM/IMG_0001.JPG`, which any PC or photo app can read.
@@ -142,6 +143,30 @@ On Linux, your user needs to be in the `dialout` group to use `/dev/ttyACM0`.
 | OV5640-AF | 2560 × 1920 JPEG with an EXIF orientation tag, so it displays as 1920 × 2560 portrait | Normal: about 4–6 s. Other looks: about 8–14 s. |
 | OV2640 | 1200 × 1600 portrait JPEG | about 6–7 s |
 
+### 🏷️ EXIF metadata
+
+Every photo and time-lapse frame carries full EXIF, so photo apps sort and label them correctly:
+
+| What | EXIF tags | Example |
+|---|---|---|
+| Camera | Make, Model, Software, SerialNumber | `Charmera-S3`, `Charmera-S3 (OV5640)`, `charmera-s3 0.1.0`, the board's MAC |
+| When | DateTimeOriginal, CreateDate, ModifyDate, OffsetTime* | `2026:11:06 19:42:05`, `-08:00` |
+| Picture | Orientation, ExifImageWidth/Height, ColorSpace, resolution | portrait, `2560 × 1920` stored, sRGB |
+| How it was shot | ImageDescription, UserComment | `Time-lapse 101LAPSE frame 12, every 10 s, look Normal` |
+| Fixed facts | ExifVersion 0232, Flash (none), SensingMethod, ExposureMode/WhiteBalance (auto) | |
+
+Time-lapse frames name themselves. `ImageDescription` says which run and frame, and
+`UserComment` holds machine-readable fields:
+`mode=timelapse; folder=101LAPSE; frame=12; interval_s=10; elapsed_s=110; look=Normal; camera=OV5640`.
+Single photos say `mode=single; look=…; camera=…`.
+
+The board has no battery-backed clock. **The [web remote](#-bluetooth-remote) sets the camera's
+clock each time it connects.** After that, photos get the date and time until the camera loses
+power. Photos taken before the clock is set have no date tags rather than a wrong date. Exposure
+time, ISO, focal length and aperture are left out, because the camera can't report them accurately.
+
+Check a photo with `exiftool -G1 -a IMG_0001.JPG`.
+
 Photos go in `DCIM/100CHARM/`. Numbering continues from the highest-numbered file on the
 card, and existing files are never overwritten. To copy photos off, put the card in a card
 reader.
@@ -196,8 +221,8 @@ with three characteristics, plus the standard Battery Service:
 
 | Characteristic | UUID | |
 |---|---|---|
-| Status JSON | `c4a30001-…` | read / notify: `photos`, `left`, `battery`, `usb`, `camera`, `look`, `lookName`, `mode`, `interval`, `intervalName`, `running`, `frames`, `elapsed`, `folder`, `card`, `busy`, `last`, `error` |
-| Command | `c4a30002-…` | write text: `look <0-11>`, `mode single`, `mode lapse [0-4]`, `interval <0-4>`, `shoot`, `lapse start`, `lapse stop` |
+| Status JSON | `c4a30001-…` | read / notify: `photos`, `left`, `battery`, `usb`, `camera`, `look`, `lookName`, `mode`, `interval`, `intervalName`, `running`, `frames`, `elapsed`, `folder`, `card`, `busy`, `last`, `error`, `clock` |
+| Command | `c4a30002-…` | write text: `look <0-11>`, `mode single`, `mode lapse [0-4]`, `interval <0-4>`, `shoot`, `lapse start`, `lapse stop`, `time <unix seconds> [UTC offset minutes]` |
 | Info JSON | `c4a30003-…` | read: firmware version, look names, interval names |
 
 A rejected command shows its reason in Status (`"error":"bad look"`, `"time-lapse running"`).
@@ -249,6 +274,7 @@ the board:
 | Reading photos in a PC card reader | ⚠️ no: files were checked over USB serial instead |
 | Time-lapse at 10 s and 30 s (frames, sensor sleep between frames, stop) | ✅ yes |
 | Bluetooth remote: every command over BLE from a PC (17 checks), and the web page in Chrome (14 checks) | ✅ yes |
+| Full EXIF and the clock from the remote | ⚠️ no: host-tested, and ExifTool validates the segment in a real JPEG; not yet run on the board |
 
 Board test results are in [`docs/acceptance-2026-11-06.md`](docs/acceptance-2026-11-06.md).
 
