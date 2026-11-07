@@ -79,6 +79,12 @@ Every call made on the owner's behalf during the build, in order, from the build
 - Fixed while here: since the EXIF change, the gallery read Orientation only from the first IFD0 tag (now ImageDescription), so OV5640 photos showed sideways; replaced by a real IFD walk with bounds checks (host-tested, including malformed files). The gallery now fits any photo shape on either screen shape (decode at >= 1/8, then nearest-neighbour scale).
 - NOT run on the board (owner kept it unplugged). Four constants are derived, not measured: ORIENT_SENSOR_NATIVE = USB-C left (from the verified portrait mapping), ORIENT_LEFT_DEG = +90 (from the owner-checked portrait level; an older landscape tilt log disagrees), LVGL rotation 90 = USB-C left (LVGL's clockwise naming), INPUT_DOWN_SIGN = +1 (landscape level only). The boot log prints the raw gravity values to check them.
 
+## Film Frame redesign (owner: "too narrow ... needs to be fuller")
+
+- Analysis: the old frame drew 2t bands across the short ends with small square holes and t/2 sides, so on a portrait photo the "film" ran the wrong way and covered ~5% of the edge. Real 35 mm film has its sprocket rails along the long edges, each 5.5 of 35 mm (15.7%).
+- Ruling: rebuilt from real 35 mm dimensions, scaled so the film width is the photo's short edge: 5.5 mm rails along both long edges, rounded KS perforations (2.8 x 2.0 mm, 4.75 mm pitch, backlit cream), near-black film base, and amber edge print in the outer margin ("CHARMERA 400 >12 >12A"; original text, no Kodak marks), reading along the film. FRAME_REACH raised from 3 to 6 so the wider rails are drawn. Host tests pin the rail width, the untouched picture and the hole count in both orientations; the README looks sheet was re-rendered.
+- The frame code is the same pure C the camera runs; not looked at on the board itself.
+
 ## Deferred minor issues (from the final review)
 
 - "card full" estimate can still fail mid-write on the last photo (now returns Card full via free-space check before writing).

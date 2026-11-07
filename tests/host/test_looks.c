@@ -374,6 +374,56 @@ static void test_landscape_view_uses_short_edge(void)
     look_set_pixel_threshold(128);
 }
 
+/* Film Frame: 35 mm proportions. Rails with sprocket holes run along the photo's LONG
+   edges and are 5.5/35 of the short edge wide; the picture between them is untouched. */
+static void film_check(int w, int h)
+{
+    uint8_t *img = malloc((size_t)w * h * 3);
+    memset(img, 0x80, (size_t)w * h * 3); /* mid grey, so frame pixels stand out */
+    look_apply_rgb888(LOOK_FRAME_FILM, img, w, h, 0, w, h);
+    const bool tall = h >= w;
+    const int S = tall ? w : h, L = tall ? h : w;
+    const int rail = S * 55 / 350;
+    int holes = 0, prev_cream = 0;
+    for (int u = 0; u < L; u++) {
+        /* across = distance from one long edge; u = along the film */
+        int changed_rail = 0, cream = 0;
+        for (int a = 0; a < rail - 1; a++) {
+            const int x = tall ? a : u, y = tall ? u : a;
+            const uint8_t *p = img + ((size_t)y * w + x) * 3;
+            changed_rail += p[0] != 0x80 || p[1] != 0x80 || p[2] != 0x80;
+            cream |= p[0] > 200 && p[1] > 200 && p[2] > 180; /* a backlit sprocket hole */
+        }
+        TEST_ASSERT_EQUAL_MESSAGE(rail - 1, changed_rail, "rail fully covered");
+        /* just inside the rail on both sides: the picture */
+        for (int a = rail + 2; a < rail + 6; a++) {
+            const int x1 = tall ? a : u, y1 = tall ? u : a;
+            const int x2 = tall ? S - 1 - a : u, y2 = tall ? u : S - 1 - a;
+            TEST_ASSERT_EQUAL_HEX8_MESSAGE(0x80, img[((size_t)y1 * w + x1) * 3], "picture left untouched");
+            TEST_ASSERT_EQUAL_HEX8_MESSAGE(0x80, img[((size_t)y2 * w + x2) * 3], "picture left untouched");
+        }
+        holes += cream && !prev_cream;
+        prev_cream = cream;
+    }
+    /* 4.75 mm pitch along the film */
+    const float pitch_mm = 4.75f, film_mm = 35.0f;
+    const int want = (int)(L / (S * pitch_mm / film_mm));
+    TEST_ASSERT_INT_WITHIN_MESSAGE(2, want, holes, "sprocket hole count along the long edge");
+    free(img);
+}
+
+static void test_film_frame_portrait(void)
+{
+    film_check(240, 320);
+    film_check(1200, 1600);
+}
+
+static void test_film_frame_landscape(void)
+{
+    film_check(320, 240);
+    film_check(1600, 1200);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -393,5 +443,7 @@ int main(void)
     RUN_TEST(test_sensor_strips_match_portrait_for_every_look);
     RUN_TEST(test_sensor_strips_match_view_every_orientation);
     RUN_TEST(test_landscape_view_uses_short_edge);
+    RUN_TEST(test_film_frame_portrait);
+    RUN_TEST(test_film_frame_landscape);
     return UNITY_END();
 }

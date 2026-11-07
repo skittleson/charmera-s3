@@ -6,7 +6,7 @@
 /* Frames are drawn procedurally from absolute image coordinates, so any strip split
    gives the same picture. All decoration stays within FRAME_REACH * t of the edges,
    where t = the short edge / 32. */
-#define FRAME_REACH 3
+#define FRAME_REACH 6 /* the film rails are about 5 units wide */
 
 typedef struct {
     int w, h, t;
@@ -83,27 +83,102 @@ static bool pc_window(const geom_t *g, int x, int y, uint8_t *p)
     return false;
 }
 
+/* ---- Film Frame: a strip of 35 mm film ----
+   Real 35 mm stock is 35 mm wide; the sprocket rails along both long edges are 5.5 mm
+   each, with KS perforations 2.8 mm across x 2.0 mm along on a 4.75 mm pitch, and edge
+   printing in the outer margin. The film runs along the photo's long side, so the film
+   width is the short edge. Distances are tenths of a millimetre of that film. */
+
+#define FILM_RAIL     55  /* 5.5 mm */
+#define FILM_HOLE_OUT 13  /* hole starts 1.3 mm from the film edge */
+#define FILM_HOLE_AX  28  /* hole size across the film */
+#define FILM_HOLE_AL  20  /* hole size along the film */
+#define FILM_PITCH    475 /* hundredths of a mm: 4.75 mm */
+#define FILM_RADIUS   5   /* hole corner radius 0.5 mm */
+#define FILM_TEXT_AT  3   /* edge print from 0.3 mm ... */
+#define FILM_TEXT_H   8   /* ... 0.8 mm tall */
+
+/* 5x7 glyphs for the edge print, one byte per row, bit 4 = left column. */
+static const char FILM_TEXT[] = "CHARMERA 400  >12  >12A  ";
+static uint8_t film_glyph_row(char c, int row)
+{
+    static const struct {
+        char c;
+        uint8_t rows[7];
+    } GLYPHS[] = {
+        {'C', {0x0e, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0e}}, {'H', {0x11, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}},
+        {'A', {0x0e, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}}, {'R', {0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11}},
+        {'M', {0x11, 0x1b, 0x15, 0x15, 0x11, 0x11, 0x11}}, {'E', {0x1f, 0x10, 0x10, 0x1e, 0x10, 0x10, 0x1f}},
+        {'4', {0x02, 0x06, 0x0a, 0x12, 0x1f, 0x02, 0x02}}, {'0', {0x0e, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0e}},
+        {'1', {0x04, 0x0c, 0x04, 0x04, 0x04, 0x04, 0x0e}}, {'2', {0x0e, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1f}},
+        {'>', {0x10, 0x18, 0x1c, 0x1e, 0x1c, 0x18, 0x10}}, /* the frame-number arrow, filled */
+    };
+    for (size_t i = 0; i < sizeof(GLYPHS) / sizeof(GLYPHS[0]); i++) {
+        if (GLYPHS[i].c == c) {
+            return GLYPHS[i].rows[row];
+        }
+    }
+    return 0; /* space */
+}
+
+/* True if (along, across) inside a w x h rectangle with corner radius r is in the shape. */
+static bool rounded_rect(int along, int across, int w, int h, int r)
+{
+    if (along < 0 || across < 0 || along >= w || across >= h) {
+        return false;
+    }
+    const int cx = along < r ? r : (along >= w - r ? w - 1 - r : along);
+    const int cy = across < r ? r : (across >= h - r ? h - 1 - r : across);
+    const int dx = along - cx, dy = across - cy;
+    return dx * dx + dy * dy <= r * r;
+}
+
 static bool film(const geom_t *g, int x, int y, uint8_t *p)
 {
-    const int t = g->t, band = 2 * t, side = t / 2;
-    const bool top = y < band, bottom = y >= g->h - band;
-    if (top || bottom) {
-        const int by = top ? 0 : g->h - band;
-        const int hole_top = by + (band - t) / 2;
-        const int pitch = 2 * t, off = t / 2;
-        const bool in_hole = y >= hole_top && y < hole_top + t && ((x + off) % pitch) < t;
-        if (in_hole) {
-            put(p, 240, 235, 220);
-        } else {
-            put(p, 16, 16, 16);
+    const bool tall = g->h >= g->w;
+    const int S = tall ? g->w : g->h; /* film width */
+    const int across_px = tall ? x : y;
+    const int along = tall ? y : x;
+#define FMM(tenths) (S * (tenths) / 350)
+    const int rail = FMM(FILM_RAIL);
+    int d; /* distance from the nearer film edge */
+    bool first_edge;
+    if (across_px < rail) {
+        d = across_px;
+        first_edge = true;
+    } else if (across_px >= S - rail) {
+        d = S - 1 - across_px;
+        first_edge = false;
+    } else {
+        return false; /* the picture */
+    }
+    /* Sprocket holes: backlit, rounded, centred on the pitch. */
+    const int pitch = S * FILM_PITCH / 3500;
+    const int hole_al = FMM(FILM_HOLE_AL), hole_ax = FMM(FILM_HOLE_AX);
+    const int radius = FMM(FILM_RADIUS) < 1 ? 1 : FMM(FILM_RADIUS);
+    const int in_pitch = pitch > 0 ? (along + (hole_al - pitch) / 2 % pitch + pitch) % pitch : 0;
+    if (rounded_rect(in_pitch, d - FMM(FILM_HOLE_OUT), hole_al, hole_ax, radius)) {
+        put(p, 238, 232, 214);
+        return true;
+    }
+    /* Edge print in the outer margin of the first rail, reading along the film. */
+    const int px = FMM(FILM_TEXT_H) / 7 < 1 ? 1 : FMM(FILM_TEXT_H) / 7;
+    const int ty = d - FMM(FILM_TEXT_AT);
+    if (first_edge && ty >= 0 && ty < 7 * px) {
+        const int cell = 6 * px, len = (int)sizeof(FILM_TEXT) - 1;
+        const int col = along / px % 6, ch = along / cell % len;
+        /* text runs along the film; glyph rows run away from the edge */
+        /* Landscape: letter tops face the film edge. Portrait (text turned clockwise to
+           read downwards): letter tops face the picture, so rows count back from it. */
+        const int row = tall ? 6 - ty / px : ty / px;
+        if (col < 5 && (film_glyph_row(FILM_TEXT[ch], row) >> (4 - col) & 1)) {
+            put(p, 242, 150, 40);
+            return true;
         }
-        return true;
     }
-    if (x < side || x >= g->w - side) {
-        put(p, 16, 16, 16);
-        return true;
-    }
-    return false;
+    put(p, 22, 19, 17); /* film base */
+    return true;
+#undef FMM
 }
 
 static bool charmera(const geom_t *g, int x, int y, uint8_t *p)
