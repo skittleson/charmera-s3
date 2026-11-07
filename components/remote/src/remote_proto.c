@@ -1,5 +1,7 @@
 #include "remote_proto.h"
 
+#include "orient.h"
+
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -67,6 +69,13 @@ const char *remote_parse(const char *text, size_t len, int look_count, int inter
         }
         out->kind = RC_TIME;
         out->epoch = e;
+        return NULL;
+    }
+    if (strcmp(w[0], "orientation") == 0) {
+        if (n != 2 || (out->arg = orient_parse(w[1])) < 0) {
+            return "bad orientation";
+        }
+        out->kind = RC_ORIENTATION;
         return NULL;
     }
     if (strcmp(w[0], "look") == 0) {
@@ -194,7 +203,11 @@ size_t remote_status_json(const remote_status_t *s, char *out, size_t len)
     put_str(&k, s->last);
     put(&k, ",\"error\":");
     put_str(&k, s->error);
-    put(&k, ",\"clock\":%s}", s->clock_set ? "true" : "false");
+    put(&k, ",\"clock\":%s,\"orientation\":", s->clock_set ? "true" : "false");
+    put_str(&k, s->orientation ? s->orientation : "portrait");
+    put(&k, ",\"orientationSetting\":");
+    put_str(&k, s->orientation_setting ? s->orientation_setting : "portrait");
+    put(&k, "}");
     return finish(&k);
 }
 

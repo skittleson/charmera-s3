@@ -38,6 +38,7 @@ function render() {
   $('camera').textContent = s.camera;
   $('look').value = s.look;
   $('interval').value = s.interval;
+  if (s.orientationSetting) $('orientation').value = s.orientationSetting;
   $('mode-single').setAttribute('aria-checked', s.mode === 'single');
   $('mode-lapse').setAttribute('aria-checked', s.mode === 'lapse');
 
@@ -52,7 +53,9 @@ function render() {
 
   // During a run only Stop works; while saving, nothing new can start.
   const locked = s.running || s.busy;
-  for (const id of ['look', 'interval', 'mode-single', 'mode-lapse', 'shoot']) $(id).disabled = locked;
+  for (const id of ['look', 'interval', 'orientation', 'mode-single', 'mode-lapse', 'shoot']) {
+    $(id).disabled = locked;
+  }
   $('lapse-start').disabled = locked;
   $('lapse-stop').disabled = !s.running;
   $('shoot').classList.toggle('busy', s.busy);
@@ -161,6 +164,7 @@ function init() {
   $('connect').addEventListener('click', connect);
   $('look').addEventListener('change', (e) => send(`look ${e.target.value}`));
   $('interval').addEventListener('change', (e) => send(`interval ${e.target.value}`));
+  $('orientation').addEventListener('change', (e) => send(`orientation ${e.target.value}`));
   $('mode-single').addEventListener('click', () => send('mode single'));
   $('mode-lapse').addEventListener('click', () => send(`mode lapse ${$('interval').value || ''}`.trim()));
   $('shoot').addEventListener('click', () => send('shoot'));

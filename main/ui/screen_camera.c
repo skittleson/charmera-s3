@@ -597,6 +597,9 @@ static void tick(void)
         s.next_status = now + 5 * 1000 * 1000;
         refresh_status();
     }
+    /* Auto orientation: only here on the camera screen, and never mid-save, during a
+       time-lapse run (its frames must match), with a menu open or the screen asleep. */
+    orientation_auto_poll(s.busy || s.lapse.mode == LAPSE_RUNNING || ui_menu_is_open() || power_is_asleep());
     if (s.lapse.mode == LAPSE_RUNNING && !s.busy) {
         if (now_ms() >= s.lapse.due_ms) {
             lapse_frame(); /* keeps shooting while the screen sleeps or a dialog is open */
@@ -673,6 +676,10 @@ const char *ui_camera_remote(const remote_cmd_t *c)
         break;
     case RC_TIME:
         break; /* handled by the bridge */
+    case RC_ORIENTATION:
+        settings_set_orientation(c->arg);
+        orientation_setting_changed(); /* rebuilds this screen if the grip changes */
+        break;
     }
     return NULL;
 }
@@ -692,6 +699,8 @@ void ui_camera_fill_status(remote_status_t *st)
     strlcpy(st->folder, s.lapse.folder, sizeof(st->folder));
     st->busy = s.busy;
     strlcpy(st->last, s_last, sizeof(st->last));
+    st->orientation = orient_name(orientation_current());
+    st->orientation_setting = orient_name(settings_orientation());
 }
 
 const ui_screen_t ui_camera_screen = {

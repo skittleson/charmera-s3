@@ -85,9 +85,22 @@ static void test_parse_time(void)
     TEST_ASSERT_EQUAL_STRING("bad time", parse_err("time 1793072525 -721"));
 }
 
+static void test_parse_orientation(void)
+{
+    remote_cmd_t c = parse_ok("orientation landscape-left");
+    TEST_ASSERT_EQUAL(RC_ORIENTATION, c.kind);
+    TEST_ASSERT_EQUAL(2, c.arg);
+    TEST_ASSERT_EQUAL(3, parse_ok("Orientation AUTO\n").arg);
+    TEST_ASSERT_EQUAL(0, parse_ok("orientation portrait").arg);
+    TEST_ASSERT_EQUAL(1, parse_ok("orientation landscape-right").arg);
+    TEST_ASSERT_EQUAL_STRING("bad orientation", parse_err("orientation up"));
+    TEST_ASSERT_EQUAL_STRING("bad orientation", parse_err("orientation"));
+}
+
 static void test_check_refuses_changes_while_running(void)
 {
-    const remote_cmd_kind_t refused[] = {RC_LOOK, RC_MODE_SINGLE, RC_MODE_LAPSE, RC_INTERVAL, RC_SHOOT, RC_LAPSE_START};
+    const remote_cmd_kind_t refused[] = {RC_LOOK,  RC_MODE_SINGLE, RC_MODE_LAPSE,
+                                         RC_INTERVAL, RC_SHOOT,   RC_LAPSE_START, RC_ORIENTATION};
     for (size_t i = 0; i < sizeof(refused) / sizeof(refused[0]); i++) {
         remote_cmd_t c = {.kind = refused[i], .arg = 1};
         TEST_ASSERT_EQUAL_STRING("time-lapse running", remote_check(&c, true));
@@ -106,7 +119,7 @@ static remote_status_t sample(void)
         .photos = 91, .left = 120, .battery_pct = 82, .usb = false, .camera = "OV5640",
         .look = 3, .look_name = "Black & White", .lapse_mode = true, .interval = 1, .interval_name = "10 s",
         .lapse_running = true, .frames = 12, .elapsed_s = 75, .card = REMOTE_CARD_OK, .busy = false,
-        .clock_set = true,
+        .clock_set = true, .orientation = "portrait", .orientation_setting = "auto",
     };
     strcpy(s.folder, "101LAPSE");
     strcpy(s.last, "IMG_0093");
@@ -126,7 +139,8 @@ static void test_status_json_fields(void)
                           "\"camera\":\"OV5640\"", "\"look\":3", "\"lookName\":\"Black & White\"",
                           "\"mode\":\"lapse\"", "\"interval\":1", "\"intervalName\":\"10 s\"", "\"running\":true",
                           "\"frames\":12", "\"elapsed\":75", "\"folder\":\"101LAPSE\"", "\"card\":\"ok\"",
-                          "\"busy\":false", "\"last\":\"IMG_0093\"", "\"error\":\"\"", "\"clock\":true"};
+                          "\"busy\":false", "\"last\":\"IMG_0093\"", "\"error\":\"\"", "\"clock\":true", "\"orientation\":\"portrait\"",
+                          "\"orientationSetting\":\"auto\""};
     for (size_t i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
         TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, want[i]), want[i]);
     }
@@ -172,6 +186,7 @@ int main(void)
     RUN_TEST(test_parse_tolerates_whitespace_and_case);
     RUN_TEST(test_parse_rejects_bad_numbers);
     RUN_TEST(test_parse_time);
+    RUN_TEST(test_parse_orientation);
     RUN_TEST(test_check_refuses_changes_while_running);
     RUN_TEST(test_status_json_fields);
     RUN_TEST(test_status_json_escapes_quotes);

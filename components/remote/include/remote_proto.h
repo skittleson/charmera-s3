@@ -16,6 +16,7 @@ typedef enum {
     RC_LAPSE_START, /* lapse start */
     RC_LAPSE_STOP,  /* lapse stop */
     RC_TIME,        /* time <unix seconds> [utc offset minutes] */
+    RC_ORIENTATION, /* orientation <portrait|landscape-right|landscape-left|auto> -> arg 0..3 */
 } remote_cmd_kind_t;
 
 typedef struct {
@@ -26,7 +27,7 @@ typedef struct {
 } remote_cmd_t;
 
 /* Parse len bytes (no NUL needed; surrounding whitespace and case ignored).
-   NULL on success, else a short static reason: "unknown command", "bad look", "bad interval", "bad time". */
+   NULL on success, else a short static reason: "unknown command", "bad look", "bad interval", "bad time", "bad orientation". */
 const char *remote_parse(const char *text, size_t len, int look_count, int interval_count, remote_cmd_t *out);
 
 /* NULL if c may run now, else "time-lapse running" or "not running". */
@@ -51,7 +52,9 @@ typedef struct {
     bool busy;
     char last[24];  /* "" = none yet */
     char error[32]; /* "" = none */
-    bool clock_set; /* EXIF dates available (time was sent) */
+    bool clock_set;                  /* EXIF dates available (time was sent) */
+    const char *orientation;         /* in effect: portrait / landscape-right / landscape-left */
+    const char *orientation_setting; /* the setting: those, or auto */
 } remote_status_t;
 
 /* Compact JSON. Returns its length, or 0 if it doesn't fit (never truncated). */

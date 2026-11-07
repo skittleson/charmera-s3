@@ -76,7 +76,7 @@ async def main():
               str(info))
         check("status has every field", {"photos", "left", "battery", "usb", "camera", "look", "lookName", "mode",
                                          "interval", "intervalName", "running", "frames", "elapsed", "folder",
-                                         "card", "busy", "last", "error", "clock"} <= set(st), str(st))
+                                         "card", "busy", "last", "error", "clock", "orientation", "orientationSetting"} <= set(st), str(st))
         print(f"      camera {st['camera']}, {st['photos']} photos, {st['left']} left, battery {st['battery']}%"
               f"{' (USB)' if st['usb'] else ''}, card {st['card']}")
 
@@ -90,6 +90,16 @@ async def main():
               str(cam.status))
         await cam.send("  LOOK 3\r\n")
         check("'  LOOK 3\\r\\n' tolerated", await cam.wait(lambda s: s["look"] == 3), str(cam.status))
+        await cam.send("orientation landscape-right")
+        check("orientation landscape-right", await cam.wait(
+            lambda s: s["orientation"] == "landscape-right" and s["orientationSetting"] == "landscape-right"),
+              str(cam.status))
+        await cam.send("orientation sideways")
+        check("orientation sideways -> bad orientation", await cam.wait(lambda s: s["error"] == "bad orientation"),
+              str(cam.status))
+        await cam.send("orientation portrait")
+        check("orientation portrait", await cam.wait(lambda s: s["orientation"] == "portrait"), str(cam.status))
+
         await cam.send("look 99")
         check("look 99 -> bad look, look unchanged",
               await cam.wait(lambda s: s["error"] == "bad look" and s["look"] == 3), str(cam.status))
@@ -117,6 +127,10 @@ async def main():
         await cam.send("look 1")
         check("look during run -> refused, run continues",
               await cam.wait(lambda s: s["error"] == "time-lapse running" and s["running"] and s["look"] == 3),
+              str(cam.status))
+        await cam.send("orientation auto")
+        check("orientation during run -> refused",
+              await cam.wait(lambda s: s["error"] == "time-lapse running" and s["orientationSetting"] == "portrait"),
               str(cam.status))
         await cam.send("shoot")
         check("shoot during run -> refused", await cam.wait(lambda s: s["error"] == "time-lapse running"),
