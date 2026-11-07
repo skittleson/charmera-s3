@@ -43,6 +43,20 @@ void orient_view_to_sensor(orient_t o, int vx, int vy, int sw, int sh, int *sx, 
     }
 }
 
+void orient_sensor_to_view(orient_t o, int sx, int sy, int sw, int sh, int *vx, int *vy)
+{
+    if (o == ORIENT_PORTRAIT) {
+        *vx = sy;
+        *vy = sw - 1 - sx;
+    } else if (o == ORIENT_SENSOR_NATIVE) {
+        *vx = sx;
+        *vy = sy;
+    } else {
+        *vx = sw - 1 - sx;
+        *vy = sh - 1 - sy;
+    }
+}
+
 uint16_t orient_exif(orient_t o)
 {
     if (o == ORIENT_PORTRAIT) {

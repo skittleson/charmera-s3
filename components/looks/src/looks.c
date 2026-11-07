@@ -89,10 +89,11 @@ int look_mean_luma_rgb565(const uint16_t *px, int n)
     return n ? (int)(sum / n) : 128;
 }
 
-int look_pixel_block(int img_w)
+int look_pixel_block(int short_edge)
 {
-    /* 80 cells across at every size, so the viewfinder and the photo match. */
-    int b = img_w / 80;
+    /* 80 cells across the short edge at every size, so the viewfinder and the photo
+       match in any orientation. */
+    int b = short_edge / 80;
     return b < 2 ? 2 : b;
 }
 
@@ -135,7 +136,7 @@ void look_apply_rgb888(look_t l, uint8_t *rgb, int strip_w, int strip_h, int y0,
     } else if (l == LOOK_BW) {
         mono(rgb, n);
     } else if (l >= LOOK_PIXEL_RED && l <= LOOK_PIXEL_GRAY) {
-        const int b = look_pixel_block(img_w);
+        const int b = look_pixel_block(img_w < img_h ? img_w : img_h); /* short edge */
         assert(strip_h % b == 0 || y0 + strip_h == img_h);
         pixelate(PALETTES[l - LOOK_PIXEL_RED], rgb, strip_w, strip_h, y0, img_h, b);
     } else if (l >= LOOK_FRAME_STICKER && l < LOOK_COUNT) {
@@ -157,38 +158,58 @@ bool look_reserve_rgb565(int w, int h)
     return s_buf != NULL;
 }
 
-/* Pixel cells for a sensor-orientation strip. Portrait columns are sensor rows (cells
-   start at row 0); portrait rows run right-to-left across the sensor (cells start at
-   the sensor's right edge). */
-static void pixelate_sensor(const uint8_t pal[2][3], uint8_t *rgb, int w, int h, int b)
+/* Pixel cells for a sensor-orientation strip seen as o. Cells are laid out in view
+   coordinates; in sensor terms each sensor row belongs to one cell row (rowkey) and each
+   column to one cell column (colkey), both contiguous, so cells are found by scanning. */
+static int colkey(orient_t o, int sx, int sw, int b)
 {
-    for (int cy = 0; cy < h; cy += b) {
-        const int ch = (cy + b <= h) ? b : h - cy;
-        for (int right = w; right > 0; right -= b) {
-            const int cx = right - b > 0 ? right - b : 0;
-            const int cw = right - cx;
+    return (o == ORIENT_SENSOR_NATIVE ? sx : sw - 1 - sx) / b;
+}
+
+static int rowkey(orient_t o, int sy, int sh, int b)
+{
+    return (o == ORIENT_PORTRAIT || o == ORIENT_SENSOR_NATIVE ? sy : sh - 1 - sy) / b;
+}
+
+static void pixelate_sensor(const uint8_t pal[2][3], uint8_t *rgb, int w, int rows, int y0, int img_h, int b,
+                            orient_t o)
+{
+    for (int r0 = 0; r0 < rows;) {
+        const int kr = rowkey(o, y0 + r0, img_h, b);
+        int r1 = r0 + 1;
+        while (r1 < rows && rowkey(o, y0 + r1, img_h, b) == kr) {
+            r1++;
+        }
+        for (int c0 = 0; c0 < w;) {
+            const int kc = colkey(o, c0, w, b);
+            int c1 = c0 + 1;
+            while (c1 < w && colkey(o, c1, w, b) == kc) {
+                c1++;
+            }
             uint32_t sum = 0;
-            for (int y = cy; y < cy + ch; y++) {
-                const uint8_t *p = rgb + ((size_t)y * w + cx) * 3;
-                for (int x = 0; x < cw; x++, p += 3) {
+            for (int y = r0; y < r1; y++) {
+                const uint8_t *p = rgb + ((size_t)y * w + c0) * 3;
+                for (int x = c0; x < c1; x++, p += 3) {
                     sum += (77u * p[0] + 150u * p[1] + 29u * p[2]) >> 8;
                 }
             }
-            const uint8_t *c = pal[(int)(sum / (uint32_t)(cw * ch)) >= s_threshold ? 1 : 0];
-            for (int y = cy; y < cy + ch; y++) {
-                uint8_t *p = rgb + ((size_t)y * w + cx) * 3;
-                for (int x = 0; x < cw; x++, p += 3) {
+            const uint8_t *c = pal[(int)(sum / (uint32_t)((r1 - r0) * (c1 - c0))) >= s_threshold ? 1 : 0];
+            for (int y = r0; y < r1; y++) {
+                uint8_t *p = rgb + ((size_t)y * w + c0) * 3;
+                for (int x = c0; x < c1; x++, p += 3) {
                     p[0] = c[0];
                     p[1] = c[1];
                     p[2] = c[2];
                 }
             }
+            c0 = c1;
         }
+        r0 = r1;
     }
 }
 
 void look_apply_rgb888_sensor(look_t l, uint8_t *rgb, int sensor_w, int rows, int y0, int img_sensor_w,
-                              int img_sensor_h)
+                              int img_sensor_h, orient_t o)
 {
     const size_t n = (size_t)sensor_w * rows;
     if (l == LOOK_COOL) {
@@ -198,12 +219,12 @@ void look_apply_rgb888_sensor(look_t l, uint8_t *rgb, int sensor_w, int rows, in
     } else if (l == LOOK_BW) {
         mono(rgb, n);
     } else if (l >= LOOK_PIXEL_RED && l <= LOOK_PIXEL_GRAY) {
-        const int b = look_pixel_block(img_sensor_h); /* portrait width */
-        assert(y0 % b == 0);
+        const int b = look_pixel_block(img_sensor_h < img_sensor_w ? img_sensor_h : img_sensor_w);
+        assert(y0 % b == 0 && (img_sensor_h % b == 0 || o == ORIENT_PORTRAIT || o == ORIENT_SENSOR_NATIVE));
         assert(rows % b == 0 || y0 + rows == img_sensor_h);
-        pixelate_sensor(PALETTES[l - LOOK_PIXEL_RED], rgb, sensor_w, rows, b);
+        pixelate_sensor(PALETTES[l - LOOK_PIXEL_RED], rgb, sensor_w, rows, y0, img_sensor_h, b, o);
     } else if (l >= LOOK_FRAME_STICKER && l < LOOK_COUNT) {
-        frame_apply_sensor(l, rgb, sensor_w, rows, y0, img_sensor_w, img_sensor_h);
+        frame_apply_sensor(l, rgb, sensor_w, rows, y0, img_sensor_w, img_sensor_h, o);
     }
 }
 

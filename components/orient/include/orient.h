@@ -44,6 +44,8 @@ int orient_parse(const char *name);
 void orient_view_size(orient_t o, int sw, int sh, int *vw, int *vh);
 /* View pixel (vx, vy) -> sensor pixel. */
 void orient_view_to_sensor(orient_t o, int vx, int vy, int sw, int sh, int *sx, int *sy);
+/* Sensor pixel (sx, sy) -> view pixel; the inverse of orient_view_to_sensor. */
+void orient_sensor_to_view(orient_t o, int sx, int sy, int sw, int sh, int *vx, int *vy);
 /* EXIF Orientation for a picture stored in sensor orientation and viewed as o. */
 uint16_t orient_exif(orient_t o);
 

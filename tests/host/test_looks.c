@@ -1,7 +1,9 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "looks.h"
+#include "orient.h"
 #include "unity.h"
 
 void setUp(void) {}
@@ -90,7 +92,7 @@ static void test_pixel_filter_two_tones(void)
 
     uint32_t colours[2];
     int ncol = 0;
-    const int b = look_pixel_block(w);
+    const int b = look_pixel_block(h); /* cells come from the short edge */
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             const uint8_t *p = img + (y * w + x) * 3;
@@ -178,7 +180,7 @@ static void test_rgb565_dark_scene_keeps_two_tones(void)
 static void test_strip_equals_whole_for_every_software_look(void)
 {
     const int w = 640, h = 480;
-    const int strip = look_pixel_block(w) * 2;
+    const int strip = look_pixel_block(h) * 2; /* cells come from the short edge */
     for (look_t l = LOOK_COOL; l < LOOK_COUNT; l++) {
         uint8_t *whole = random_image(w, h, 7);
         uint8_t *strips = random_image(w, h, 7);
@@ -198,7 +200,7 @@ static void test_strip_with_partial_last_strip(void)
     /* 1944 isn't a multiple of 32: the last strip is short. Use a scaled-down
        analogue: 648x486 with block 8 -> strips of 8 rows, last one 6 rows. */
     const int w = 648, h = 486;
-    const int strip = look_pixel_block(w);
+    const int strip = look_pixel_block(h); /* cells come from the short edge */
     uint8_t *whole = random_image(w, h, 3);
     uint8_t *strips = random_image(w, h, 3);
     look_apply_rgb888(LOOK_PIXEL_GRAY, whole, w, h, 0, w, h);
@@ -281,13 +283,93 @@ static void test_sensor_strips_match_portrait_for_every_look(void)
         look_apply_rgb888(l, portrait, sh, sw, 0, sh, sw);
         for (int y0 = 0; y0 < sh; y0 += strip) {
             const int rows = (sh - y0) < strip ? (sh - y0) : strip;
-            look_apply_rgb888_sensor(l, sensor + (size_t)y0 * sw * 3, sw, rows, y0, sw, sh);
+            look_apply_rgb888_sensor(l, sensor + (size_t)y0 * sw * 3, sw, rows, y0, sw, sh, ORIENT_PORTRAIT);
         }
         rotate_to_portrait(sensor, sw, sh, rotated);
         TEST_ASSERT_EQUAL_MEMORY_MESSAGE(portrait, rotated, (size_t)sw * sh * 3, look_name(l));
         free(sensor);
         free(portrait);
         free(rotated);
+    }
+    look_set_pixel_threshold(128);
+}
+
+/* Sensor image -> view image for orientation o. */
+static void to_view(const uint8_t *sensor, int sw, int sh, orient_t o, uint8_t *out)
+{
+    int vw, vh;
+    orient_view_size(o, sw, sh, &vw, &vh);
+    for (int vy = 0; vy < vh; vy++) {
+        for (int vx = 0; vx < vw; vx++) {
+            int sx, sy;
+            orient_view_to_sensor(o, vx, vy, sw, sh, &sx, &sy);
+            memcpy(out + ((size_t)vy * vw + vx) * 3, sensor + ((size_t)sy * sw + sx) * 3, 3);
+        }
+    }
+}
+
+static void test_sensor_strips_match_view_every_orientation(void)
+{
+    /* 480x360 (b 4) and 400x300 (b 3, odd), both with sensor height a multiple of b; the
+       second uses a strip count that leaves a short last strip. */
+    const int sizes[2][2] = {{480, 360}, {400, 300}};
+    for (int k = 0; k < 2; k++) {
+        const int sw = sizes[k][0], sh = sizes[k][1];
+        const int b = look_pixel_block(sh < sw ? sh : sw);
+        const int strip = b * (k ? 7 : 4);
+        for (int o = 0; o < ORIENT_COUNT; o++) {
+            int vw, vh;
+            orient_view_size((orient_t)o, sw, sh, &vw, &vh);
+            for (look_t l = LOOK_NORMAL; l < LOOK_COUNT; l++) {
+                uint8_t *sensor = random_image(sw, sh, 21 + k);
+                uint8_t *view = malloc((size_t)sw * sh * 3);
+                uint8_t *mapped = malloc((size_t)sw * sh * 3);
+                to_view(sensor, sw, sh, (orient_t)o, view);
+                look_set_pixel_threshold(100);
+                look_apply_rgb888(l, view, vw, vh, 0, vw, vh);
+                for (int y0 = 0; y0 < sh; y0 += strip) {
+                    const int rows = (sh - y0) < strip ? (sh - y0) : strip;
+                    look_apply_rgb888_sensor(l, sensor + (size_t)y0 * sw * 3, sw, rows, y0, sw, sh, (orient_t)o);
+                }
+                to_view(sensor, sw, sh, (orient_t)o, mapped);
+                char msg[64];
+                snprintf(msg, sizeof(msg), "%dx%d %s %s", sw, sh, orient_name(o), look_name(l));
+                TEST_ASSERT_EQUAL_MEMORY_MESSAGE(view, mapped, (size_t)sw * sh * 3, msg);
+                free(sensor);
+                free(view);
+                free(mapped);
+            }
+        }
+    }
+    look_set_pixel_threshold(128);
+}
+
+static void transpose(const uint8_t *in, int w, int h, uint8_t *out)
+{
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            memcpy(out + ((size_t)x * h + y) * 3, in + ((size_t)y * w + x) * 3, 3);
+        }
+    }
+}
+
+static void test_landscape_view_uses_short_edge(void)
+{
+    /* Pixel cells come from the short edge, so a landscape picture gets exactly the cells
+       of the same picture in portrait (the grid is anchored at the top-left corner). */
+    for (look_t l = LOOK_PIXEL_RED; l <= LOOK_PIXEL_GRAY; l++) {
+        uint8_t *p = random_image(240, 320, 5);
+        uint8_t *land = malloc(240 * 320 * 3);
+        uint8_t *back = malloc(240 * 320 * 3);
+        transpose(p, 240, 320, land); /* 320 x 240 */
+        look_set_pixel_threshold(100);
+        look_apply_rgb888(l, p, 240, 320, 0, 240, 320);
+        look_apply_rgb888(l, land, 320, 240, 0, 320, 240);
+        transpose(land, 320, 240, back);
+        TEST_ASSERT_EQUAL_MEMORY_MESSAGE(p, back, 240 * 320 * 3, look_name(l));
+        free(p);
+        free(land);
+        free(back);
     }
     look_set_pixel_threshold(128);
 }
@@ -309,5 +391,7 @@ int main(void)
     RUN_TEST(test_frame_leaves_centre_untouched);
     RUN_TEST(test_rgb565_matches_rgb888);
     RUN_TEST(test_sensor_strips_match_portrait_for_every_look);
+    RUN_TEST(test_sensor_strips_match_view_every_orientation);
+    RUN_TEST(test_landscape_view_uses_short_edge);
     return UNITY_END();
 }

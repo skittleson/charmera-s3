@@ -5,7 +5,7 @@
 
 /* Frames are drawn procedurally from absolute image coordinates, so any strip split
    gives the same picture. All decoration stays within FRAME_REACH * t of the edges,
-   where t = img_w / 32. */
+   where t = the short edge / 32. */
 #define FRAME_REACH 3
 
 typedef struct {
@@ -141,29 +141,41 @@ static draw_fn drawer(look_t l)
     }
 }
 
+static int frame_unit(int w, int h)
+{
+    const int short_edge = w < h ? w : h;
+    return short_edge / 32 < 4 ? 4 : short_edge / 32;
+}
+
 void frame_apply_sensor(look_t l, uint8_t *rgb, int sensor_w, int rows, int y0, int img_sensor_w,
-                        int img_sensor_h)
+                        int img_sensor_h, orient_t o)
 {
     draw_fn draw = drawer(l);
     if (!draw) {
         return;
     }
-    /* Portrait image: pw = sensor height, ph = sensor width. */
-    const int pw = img_sensor_h, ph = img_sensor_w;
-    const int t = pw / 32 < 4 ? 4 : pw / 32;
-    const geom_t g = {pw, ph, t};
+    int vw, vh;
+    orient_view_size(o, img_sensor_w, img_sensor_h, &vw, &vh);
+    const int t = frame_unit(vw, vh);
+    const geom_t g = {vw, vh, t};
     const int reach = FRAME_REACH * t;
     for (int r = 0; r < rows; r++) {
-        const int px = y0 + r;
+        const int sy = y0 + r;
         uint8_t *row = rgb + (size_t)r * sensor_w * 3;
-        const bool edge_col = px < reach || px >= pw - reach;
+        /* A sensor row is one view column (portrait) or one view row (landscape); the
+           view coordinate along the sensor row runs from one view edge to the other. */
+        int vx0, vy0;
+        orient_sensor_to_view(o, 0, sy, img_sensor_w, img_sensor_h, &vx0, &vy0);
+        const int across = o == ORIENT_PORTRAIT ? vx0 : vy0;
+        const int span = o == ORIENT_PORTRAIT ? vw : vh;
+        const bool whole = across < reach || across >= span - reach;
         for (int sx = 0; sx < sensor_w; sx++) {
-            const int py = img_sensor_w - 1 - sx;
-            if (edge_col || py < reach || py >= ph - reach) {
-                draw(&g, px, py, row + sx * 3);
-            } else {
-                sx = img_sensor_w - reach - 1; /* skip to the other border */
+            if (!whole && sx == reach && sensor_w - reach > reach) {
+                sx = sensor_w - reach; /* skip the middle: only the two view edges */
             }
+            int vx, vy;
+            orient_sensor_to_view(o, sx, sy, img_sensor_w, img_sensor_h, &vx, &vy);
+            draw(&g, vx, vy, row + sx * 3);
         }
     }
 }
@@ -174,7 +186,7 @@ void frame_apply(look_t l, uint8_t *rgb, int strip_w, int strip_h, int y0, int i
     if (!draw) {
         return;
     }
-    const int t = img_w / 32 < 4 ? 4 : img_w / 32;
+    const int t = frame_unit(img_w, img_h);
     const geom_t g = {img_w, img_h, t};
     const int reach = FRAME_REACH * t;
     for (int sy = 0; sy < strip_h; sy++) {

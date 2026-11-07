@@ -77,6 +77,10 @@ static void test_view_to_sensor_is_a_bijection(void)
                 TEST_ASSERT_TRUE(x >= 0 && x < 30 && y >= 0 && y < 20);
                 TEST_ASSERT_EQUAL(0, seen[y * 30 + x]);
                 seen[y * 30 + x] = 1;
+                int bx, by;
+                orient_sensor_to_view((orient_t)o, x, y, 30, 20, &bx, &by);
+                TEST_ASSERT_EQUAL(vx, bx);
+                TEST_ASSERT_EQUAL(vy, by);
             }
         }
     }

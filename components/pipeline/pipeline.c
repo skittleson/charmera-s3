@@ -263,7 +263,7 @@ static pipe_result_t encode_sensor_jpeg(const camera_fb_t *fb, look_t look, pipe
             if (y0 + filled > h) {
                 filled = h - y0;
             }
-            look_apply_rgb888_sensor(look, s_strip, w, filled, y0, w, h);
+            look_apply_rgb888_sensor(look, s_strip, w, filled, y0, w, h, ORIENT_PORTRAIT); /* Task 4 */
             if (!enc_feed(&e, s_strip, (size_t)w * filled * 3)) {
                 goto done;
             }
