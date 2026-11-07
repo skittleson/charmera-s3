@@ -1,5 +1,6 @@
 #include "settings.h"
 
+#include "lapse_logic.h"
 #include "nvs.h"
 
 #define NS "charmera"
@@ -7,6 +8,7 @@
 static uint8_t s_brightness = 80;
 static uint8_t s_look = LOOK_NORMAL;
 static uint8_t s_level;
+static uint8_t s_lapse = LAPSE_INTERVAL_DEFAULT;
 
 static void save_u8(const char *key, uint8_t v)
 {
@@ -25,6 +27,7 @@ void settings_load(void)
         nvs_get_u8(h, "bright", &s_brightness);
         nvs_get_u8(h, "look", &s_look);
         nvs_get_u8(h, "level", &s_level);
+        nvs_get_u8(h, "lapse", &s_lapse);
         nvs_close(h);
     }
     if (s_brightness < 10 || s_brightness > 100) {
@@ -32,6 +35,9 @@ void settings_load(void)
     }
     if (s_look >= LOOK_COUNT) {
         s_look = LOOK_NORMAL;
+    }
+    if (s_lapse >= LAPSE_INTERVAL_COUNT) {
+        s_lapse = LAPSE_INTERVAL_DEFAULT;
     }
 }
 
@@ -71,4 +77,15 @@ void settings_set_look(look_t l)
 {
     s_look = (uint8_t)l;
     save_u8("look", s_look);
+}
+
+int settings_lapse_interval(void)
+{
+    return s_lapse;
+}
+
+void settings_set_lapse_interval(int index)
+{
+    s_lapse = (index >= 0 && index < LAPSE_INTERVAL_COUNT) ? (uint8_t)index : LAPSE_INTERVAL_DEFAULT;
+    save_u8("lapse", s_lapse);
 }

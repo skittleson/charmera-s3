@@ -11,8 +11,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "input.h"
+#include "lapse_logic.h"
 #include "looks.h"
 #include "pipeline.h"
+#include "power.h"
 #include "settings.h"
 #include "storage.h"
 #include "ui.h"
@@ -29,15 +31,36 @@ static lv_image_dsc_t s_dsc = {
     .data_size = VF_W * VF_H * 2,
 };
 
+#define HINT_PHOTO "press: shoot   hold: menu"
+#define HINT_ARMED "press: start   hold: menu"
+#define HINT_RUN   "press: stop"
+/* Consecutive failed frames before a time-lapse gives up. */
+#define LAPSE_MAX_FAILS 3
+
+typedef enum { LAPSE_OFF, LAPSE_ARMED, LAPSE_RUNNING } lapse_mode_t;
+
 static struct {
-    lv_obj_t *img, *flash, *look, *remaining, *battery, *banner, *status, *hint, *level;
+    lv_obj_t *img, *flash, *look, *remaining, *battery, *banner, *status, *hint, *level, *badge;
     lv_point_precise_t level_pts[2];
     look_t current;
     int64_t look_until;
     int64_t next_status;
     bool busy;
     bool frozen;
+    struct {
+        lapse_mode_t mode;
+        int interval; /* index, see lapse_logic.h */
+        uint32_t frames;
+        int fails;
+        int64_t start_ms, due_ms;
+        char folder[9];
+    } lapse;
 } s;
+
+static int64_t now_ms(void)
+{
+    return esp_timer_get_time() / 1000;
+}
 
 static void set_look_label(void)
 {
@@ -123,6 +146,7 @@ static void enter(lv_obj_t *scr)
     ui_camera_reserve();
     memset(&s, 0, sizeof(s));
     s.current = settings_look();
+    s.lapse.interval = settings_lapse_interval();
     camera_power(true);
     camera_set_look(s.current);
 
@@ -148,8 +172,13 @@ static void enter(lv_obj_t *scr)
     lv_obj_set_hidden(s.status, true);
 
     s.hint = overlay_label(scr, &lv_font_montserrat_14);
-    lv_label_set_text(s.hint, "press: shoot   hold: menu");
+    lv_label_set_text(s.hint, HINT_PHOTO);
     lv_obj_align(s.hint, LV_ALIGN_BOTTOM_MID, 0, -4);
+
+    s.badge = overlay_label(scr, &lv_font_montserrat_14);
+    lv_obj_set_style_text_color(s.badge, lv_color_hex(0xff5a4a), 0);
+    lv_obj_align(s.badge, LV_ALIGN_TOP_MID, 0, 4);
+    lv_obj_set_hidden(s.badge, true);
 
     s.level = lv_line_create(scr);
     lv_obj_set_style_line_width(s.level, 3, 0);
@@ -170,8 +199,13 @@ static void enter(lv_obj_t *scr)
     set_look_label();
 }
 
+static void lapse_stop(const char *why);
+
 static void leave(void)
 {
+    if (s.lapse.mode == LAPSE_RUNNING) {
+        lapse_stop(NULL);
+    }
     camera_power(false); /* nothing to show: don't run the sensor */
 }
 
@@ -297,6 +331,151 @@ static void shoot(void)
     s.next_status = 0;
 }
 
+/* ---------- time-lapse ---------- */
+
+static bool lapse_sensor_sleeps(void)
+{
+    return s.lapse.mode == LAPSE_RUNNING && lapse_interval_ms(s.lapse.interval) >= LAPSE_SENSOR_SLEEP_MS;
+}
+
+/* Badge and hint for the current mode. Display lock held. */
+static void lapse_paint(void)
+{
+    char t[64];
+    switch (s.lapse.mode) {
+    case LAPSE_OFF:
+        lv_obj_set_hidden(s.badge, true);
+        lv_label_set_text(s.hint, HINT_PHOTO);
+        return;
+    case LAPSE_ARMED:
+        snprintf(t, sizeof(t), "TIME-LAPSE  every %s", lapse_interval_name(s.lapse.interval));
+        lv_label_set_text(s.hint, HINT_ARMED);
+        break;
+    case LAPSE_RUNNING: {
+        const int64_t now = now_ms();
+        char run[16], next[16];
+        lapse_format_duration((uint32_t)((now - s.lapse.start_ms) / 1000), run, sizeof(run));
+        const int64_t wait = s.lapse.due_ms > now ? (s.lapse.due_ms - now + 999) / 1000 : 0;
+        lapse_format_duration((uint32_t)wait, next, sizeof(next));
+        snprintf(t, sizeof(t), "REC  %u frames  %s  next %s", (unsigned)s.lapse.frames, run, next);
+        lv_label_set_text(s.hint, HINT_RUN);
+        break;
+    }
+    }
+    lv_label_set_text(s.badge, t);
+    lv_obj_set_hidden(s.badge, false);
+}
+
+static void lapse_repaint(void)
+{
+    if (display_lock(200)) {
+        lapse_paint();
+        display_unlock();
+    }
+}
+
+static void lapse_start(void)
+{
+    if (storage_status() != STORAGE_OK) {
+        ui_toast("No card", 1500);
+        return;
+    }
+    if (storage_photos_remaining_now() == 0) {
+        ui_toast("Card full", 1500);
+        return;
+    }
+    if (storage_lapse_begin(s.lapse.folder, sizeof(s.lapse.folder)) != ESP_OK) {
+        ui_toast("Can't start time-lapse", 2500);
+        return;
+    }
+    s.lapse.mode = LAPSE_RUNNING;
+    s.lapse.frames = 0;
+    s.lapse.fails = 0;
+    s.lapse.start_ms = s.lapse.due_ms = now_ms(); /* first frame on the next tick */
+    ESP_LOGI(TAG, "time-lapse start: every %s into %s", lapse_interval_name(s.lapse.interval), s.lapse.folder);
+    lapse_repaint();
+}
+
+/* End the run. why == NULL: stopped by the user (or by leaving the screen). */
+static void lapse_stop(const char *why)
+{
+    if (s.lapse.mode != LAPSE_RUNNING) {
+        return;
+    }
+    storage_lapse_end();
+    s.lapse.mode = LAPSE_ARMED; /* stay ready for another run */
+    ESP_LOGI(TAG, "time-lapse stop (%s): %u frames in %s", why ? why : "user", (unsigned)s.lapse.frames,
+             s.lapse.folder);
+    char t[80];
+    snprintf(t, sizeof(t), "%s%s%u frames saved\nin %s", why ? why : "", why ? "\n" : "",
+             (unsigned)s.lapse.frames, s.lapse.folder);
+    ui_toast(t, 3000);
+    s.frozen = false;
+    if (!power_is_asleep()) {
+        camera_power(true); /* the sensor may have been sleeping between frames */
+    }
+    lapse_repaint();
+}
+
+static void lapse_frame(void)
+{
+    const bool asleep = power_is_asleep();
+    camera_power(true);
+    s.busy = true;
+    set_status("Time-lapse frame...");
+    int number = 0;
+    const pipe_result_t r = pipeline_take_photo(s.current, on_captured, NULL, NULL, &number);
+    set_status(NULL);
+    s.busy = false;
+    s.next_status = 0;
+    s.lapse.due_ms = lapse_next_due(s.lapse.due_ms, lapse_interval_ms(s.lapse.interval), now_ms());
+    if (r == PIPE_OK) {
+        s.lapse.frames++;
+        s.lapse.fails = 0;
+        ESP_LOGI(TAG, "time-lapse frame %u (%s/IMG_%04d)", (unsigned)s.lapse.frames, s.lapse.folder, number);
+    } else {
+        ESP_LOGW(TAG, "time-lapse frame failed: %s", pipeline_result_text(r));
+        const bool fatal = r == PIPE_NO_CARD || r == PIPE_CARD_FULL || r == PIPE_WRITE_FAILED;
+        if (fatal || ++s.lapse.fails >= LAPSE_MAX_FAILS) {
+            lapse_stop(pipeline_result_text(r));
+            return;
+        }
+    }
+    if (asleep || lapse_sensor_sleeps()) {
+        camera_power(false); /* keep the last frame on screen; the sensor runs hot */
+        s.frozen = true;
+    }
+    lapse_repaint();
+}
+
+static void on_stop_confirm(int yes)
+{
+    if (yes) {
+        lapse_stop(NULL);
+    }
+}
+
+static void on_interval(int index)
+{
+    if (index < 0 || index >= LAPSE_INTERVAL_COUNT) {
+        return;
+    }
+    settings_set_lapse_interval(index);
+    s.lapse.interval = index;
+    s.lapse.mode = LAPSE_ARMED;
+    lapse_repaint();
+}
+
+static void open_intervals(void)
+{
+    static const char *names[LAPSE_INTERVAL_COUNT];
+    for (int i = 0; i < LAPSE_INTERVAL_COUNT; i++) {
+        names[i] = lapse_interval_name(i);
+    }
+    ui_menu_open("Time-lapse: one photo every", names, LAPSE_INTERVAL_COUNT, settings_lapse_interval(),
+                 on_interval);
+}
+
 static void on_look(int index)
 {
     if (index < 0 || index >= LOOK_COUNT) {
@@ -323,9 +502,14 @@ static void open_looks(void)
 static void on_menu(int index)
 {
     switch (index) {
+    case 0:
+        s.lapse.mode = LAPSE_OFF; /* plain photos */
+        lapse_repaint();
+        break;
     case 1: open_looks(); break;
-    case 2: ui_show(UI_SCREEN_GALLERY); break;
-    case 3: ui_show(UI_SCREEN_SETTINGS); break;
+    case 2: open_intervals(); break;
+    case 3: ui_show(UI_SCREEN_GALLERY); break;
+    case 4: ui_show(UI_SCREEN_SETTINGS); break;
     default: break;
     }
 }
@@ -335,13 +519,24 @@ static void event(input_event_t e)
     if (s.busy) {
         return;
     }
+    if (s.lapse.mode == LAPSE_RUNNING) {
+        /* A bump shouldn't end a long run: always ask, Cancel first. */
+        if (e == INPUT_SHORT || e == INPUT_LONG) {
+            ui_confirm("Stop time-lapse?", "Stop", on_stop_confirm);
+        }
+        return;
+    }
     switch (e) {
     case INPUT_SHORT:
-        shoot();
+        if (s.lapse.mode == LAPSE_ARMED) {
+            lapse_start();
+        } else {
+            shoot();
+        }
         break;
     case INPUT_LONG: {
-        static const char *const items[] = {"Camera", "Looks", "Gallery", "Settings"};
-        ui_menu_open("Menu", items, 4, 1, on_menu);
+        static const char *const items[] = {"Camera", "Looks", "Time-lapse", "Gallery", "Settings"};
+        ui_menu_open("Menu", items, 5, 1, on_menu);
         break;
     }
     default:
@@ -362,6 +557,21 @@ static void tick(void)
     if (!s.busy && now >= s.next_status) {
         s.next_status = now + 5 * 1000 * 1000;
         refresh_status();
+    }
+    if (s.lapse.mode == LAPSE_RUNNING && !s.busy) {
+        if (now_ms() >= s.lapse.due_ms) {
+            lapse_frame(); /* keeps shooting while the screen sleeps or a dialog is open */
+        } else {
+            if (lapse_sensor_sleeps() && camera_is_on()) {
+                camera_power(false); /* woken screen turned it back on */
+                s.frozen = true;
+            }
+            static int64_t next_paint;
+            if (now >= next_paint) {
+                next_paint = now + 1000 * 1000;
+                lapse_repaint();
+            }
+        }
     }
 }
 

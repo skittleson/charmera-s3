@@ -51,3 +51,40 @@ uint32_t storage_photos_remaining(uint64_t free_bytes, uint32_t avg_photo_bytes)
     }
     return (uint32_t)(free_bytes / avg_photo_bytes);
 }
+
+int storage_parse_folder_number(const char *name)
+{
+    if (!name || strlen(name) != 8) {
+        return -1;
+    }
+    int n = 0;
+    for (int i = 0; i < 3; i++) {
+        if (!isdigit((unsigned char)name[i])) {
+            return -1;
+        }
+        n = n * 10 + (name[i] - '0');
+    }
+    for (int i = 3; i < 8; i++) {
+        if (!isalnum((unsigned char)name[i]) && name[i] != '_') {
+            return -1;
+        }
+    }
+    return n >= 100 ? n : -1;
+}
+
+int storage_next_folder_number(const char *const *names, size_t n)
+{
+    int max = 100;
+    for (size_t i = 0; i < n; i++) {
+        int v = storage_parse_folder_number(names[i]);
+        if (v > max) {
+            max = v;
+        }
+    }
+    return max >= 999 ? -1 : max + 1;
+}
+
+void storage_lapse_folder_name(int number, char out[9])
+{
+    snprintf(out, 9, "%03dLAPSE", number);
+}

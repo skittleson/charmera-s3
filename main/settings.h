@@ -16,3 +16,6 @@ void settings_set_level(bool on);
 
 look_t settings_look(void);
 void settings_set_look(look_t l);
+
+int settings_lapse_interval(void); /* index into the time-lapse intervals, default 10 s */
+void settings_set_lapse_interval(int index);

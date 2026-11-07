@@ -40,3 +40,9 @@ esp_err_t storage_format(void);
 uint32_t storage_photos_remaining_now(void);
 /* True when the card has photo numbers left (IMG_9999 not reached). */
 bool storage_numbers_left(void);
+
+/* Send photos to a new DCIM/NNNLAPSE folder (numbered from IMG_0001) until
+   storage_lapse_end(). They don't appear in the gallery or the photo count.
+   out_folder gets the folder name, e.g. "101LAPSE". */
+esp_err_t storage_lapse_begin(char *out_folder, size_t len);
+void storage_lapse_end(void);

@@ -62,6 +62,43 @@ static void test_remaining_zero_when_free_below_estimate(void)
     TEST_ASSERT_EQUAL(0, storage_photos_remaining(1024 * 1024, 2u * 1024 * 1024));
 }
 
+static void test_parse_folder(void)
+{
+    TEST_ASSERT_EQUAL(100, storage_parse_folder_number("100CHARM"));
+    TEST_ASSERT_EQUAL(123, storage_parse_folder_number("123lapse"));
+    TEST_ASSERT_EQUAL(-1, storage_parse_folder_number("099LAPSE"));
+    TEST_ASSERT_EQUAL(-1, storage_parse_folder_number("1A0LAPSE"));
+    TEST_ASSERT_EQUAL(-1, storage_parse_folder_number("101LAPS"));
+    TEST_ASSERT_EQUAL(-1, storage_parse_folder_number("101LAP-E"));
+    TEST_ASSERT_EQUAL(-1, storage_parse_folder_number(NULL));
+}
+
+static void test_next_folder_starts_after_photo_folder(void)
+{
+    const char *n[] = {"100CHARM"};
+    TEST_ASSERT_EQUAL(101, storage_next_folder_number(n, 1));
+    TEST_ASSERT_EQUAL(101, storage_next_folder_number(NULL, 0));
+}
+
+static void test_next_folder_uses_max_and_ignores_files(void)
+{
+    const char *n[] = {"100CHARM", "104LAPSE", "102LAPSE", "900X.JPG", "notes"};
+    TEST_ASSERT_EQUAL(105, storage_next_folder_number(n, 5));
+}
+
+static void test_next_folder_exhausted(void)
+{
+    const char *n[] = {"999LAPSE"};
+    TEST_ASSERT_EQUAL(-1, storage_next_folder_number(n, 1));
+}
+
+static void test_lapse_folder_name(void)
+{
+    char out[9];
+    storage_lapse_folder_name(103, out);
+    TEST_ASSERT_EQUAL_STRING("103LAPSE", out);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -73,5 +110,10 @@ int main(void)
     RUN_TEST(test_name);
     RUN_TEST(test_remaining);
     RUN_TEST(test_remaining_zero_when_free_below_estimate);
+    RUN_TEST(test_parse_folder);
+    RUN_TEST(test_next_folder_starts_after_photo_folder);
+    RUN_TEST(test_next_folder_uses_max_and_ignores_files);
+    RUN_TEST(test_next_folder_exhausted);
+    RUN_TEST(test_lapse_folder_name);
     return UNITY_END();
 }

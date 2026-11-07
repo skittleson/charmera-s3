@@ -29,6 +29,10 @@ static int64_t s_last_mount_try;
 static int s_next_number = 1;
 static uint32_t s_photo_count;
 static uint32_t s_avg_size;
+/* Where photos are written: the photo folder, or a time-lapse run's own folder. */
+static char s_dir[32] = STORAGE_PHOTO_DIR;
+static bool s_lapse;
+static int s_lapse_next;
 
 static void load_avg(void)
 {
@@ -216,7 +220,19 @@ esp_err_t storage_photo_path(int number, char *out, size_t len)
 
 static void tmp_path(int number, char *out, size_t len)
 {
-    snprintf(out, len, STORAGE_PHOTO_DIR "/IMG_%04d.TMP", number);
+    snprintf(out, len, "%s/IMG_%04d.TMP", s_dir, number);
+}
+
+static void final_path(int number, char *out, size_t len)
+{
+    char name[13];
+    storage_photo_name(number, name);
+    snprintf(out, len, "%s/%s", s_dir, name);
+}
+
+static int current_number(void)
+{
+    return s_lapse ? s_lapse_next : s_next_number;
 }
 
 FILE *storage_begin_photo(int *out_number)
@@ -225,17 +241,18 @@ FILE *storage_begin_photo(int *out_number)
         return NULL;
     }
     board_spi_lock();
-    if (s_next_number < 1) {
+    const int number = current_number();
+    if (number < 1) {
         board_spi_unlock();
         return NULL;
     }
     mkdir(STORAGE_MOUNT "/DCIM", 0775);
-    mkdir(STORAGE_PHOTO_DIR, 0775);
+    mkdir(s_dir, 0775); /* also re-creates a run's folder after a card swap */
     char path[64];
-    tmp_path(s_next_number, path, sizeof(path));
+    tmp_path(number, path, sizeof(path));
     FILE *f = fopen(path, "wb");
     if (f) {
-        *out_number = s_next_number;
+        *out_number = number;
     } else {
         ESP_LOGE(TAG, "open %s failed: %d", path, errno);
     }
@@ -252,10 +269,15 @@ esp_err_t storage_commit_photo(FILE *f, int number)
     ok = (fclose(f) == 0) && ok;
     char tmp[64], final[64];
     tmp_path(number, tmp, sizeof(tmp));
-    storage_photo_path(number, final, sizeof(final));
+    final_path(number, final, sizeof(final));
     if (ok && rename(tmp, final) == 0) {
-        s_photo_count++;
-        s_next_number = number >= STORAGE_MAX_NUMBER ? -1 : number + 1;
+        const int next = number >= STORAGE_MAX_NUMBER ? -1 : number + 1;
+        if (s_lapse) {
+            s_lapse_next = next; /* time-lapse frames stay out of the gallery count */
+        } else {
+            s_photo_count++;
+            s_next_number = next;
+        }
         if (size >= MIN_PHOTO_BYTES) {
             s_avg_size = s_avg_size ? (s_avg_size * 3 + (uint32_t)size) / 4 : (uint32_t)size;
             save_avg();
@@ -339,5 +361,74 @@ uint32_t storage_photos_remaining_now(void)
 
 bool storage_numbers_left(void)
 {
-    return s_next_number >= 1;
+    return current_number() >= 1;
+}
+
+esp_err_t storage_lapse_begin(char *out_folder, size_t len)
+{
+    if (storage_status() != STORAGE_OK) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    board_spi_lock();
+    mkdir(STORAGE_MOUNT "/DCIM", 0775);
+    size_t cap = 16, n = 0;
+    char (*names)[9] = malloc(cap * sizeof(*names));
+    DIR *d = opendir(STORAGE_MOUNT "/DCIM");
+    struct dirent *e;
+    while (names && d && (e = readdir(d)) != NULL) {
+        if (storage_parse_folder_number(e->d_name) < 0) {
+            continue;
+        }
+        if (n == cap) {
+            cap *= 2;
+            char (*nn)[9] = realloc(names, cap * sizeof(*names));
+            if (!nn) {
+                break;
+            }
+            names = nn;
+        }
+        strlcpy(names[n++], e->d_name, sizeof(names[0]));
+    }
+    if (d) {
+        closedir(d);
+    }
+    if (!names) {
+        board_spi_unlock();
+        return ESP_ERR_NO_MEM;
+    }
+    const char *ptrs[n ? n : 1];
+    for (size_t i = 0; i < n; i++) {
+        ptrs[i] = names[i];
+    }
+    const int folder = storage_next_folder_number(ptrs, n);
+    free(names);
+    if (folder < 0) {
+        board_spi_unlock();
+        return ESP_ERR_NOT_FOUND;
+    }
+    char name[9];
+    storage_lapse_folder_name(folder, name);
+    snprintf(s_dir, sizeof(s_dir), STORAGE_MOUNT "/DCIM/%s", name);
+    esp_err_t err = (mkdir(s_dir, 0775) == 0 || errno == EEXIST) ? ESP_OK : ESP_FAIL;
+    if (err == ESP_OK) {
+        s_lapse = true;
+        s_lapse_next = 1;
+        if (out_folder) {
+            strlcpy(out_folder, name, len);
+        }
+        ESP_LOGI(TAG, "time-lapse folder %s", s_dir);
+    } else {
+        strlcpy(s_dir, STORAGE_PHOTO_DIR, sizeof(s_dir));
+        ESP_LOGE(TAG, "mkdir %s failed: %d", s_dir, errno);
+    }
+    board_spi_unlock();
+    return err;
+}
+
+void storage_lapse_end(void)
+{
+    board_spi_lock();
+    s_lapse = false;
+    strlcpy(s_dir, STORAGE_PHOTO_DIR, sizeof(s_dir));
+    board_spi_unlock();
 }
