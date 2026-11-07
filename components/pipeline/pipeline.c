@@ -8,10 +8,13 @@
 #include "esp_jpeg_dec.h"
 #include "esp_jpeg_enc.h"
 #include "esp_log.h"
+#include "esp_mac.h"
+#include "exif.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "storage.h"
+#include <sys/time.h>
 
 #define JPEG_QUALITY   92 /* firmware-encoded photos (looks, OV2640) */
 #define ENC_BLOCK_ROWS 16 /* 4:2:0 MCU height */
@@ -23,7 +26,15 @@
    viewers turn it 90 degrees counter-clockwise (EXIF value 8). */
 #define EXIF_ORIENT_PORTRAIT 8
 
+#define EXIF_ORIENT_UPRIGHT 1
+#define EXIF_MAX 1024
+
 static const char *TAG = "pipeline";
+
+static char s_software[32] = "charmera-s3";
+static char s_serial[13];
+static bool s_clock_set;
+static int s_clock_offset_min;
 
 static uint8_t *s_strip;
 static size_t s_strip_bytes;
@@ -72,8 +83,16 @@ static int sensor_strip_rows(void)
     return strip_rows(look_pixel_block(camera_full_height()), 32);
 }
 
-esp_err_t pipeline_init(void)
+esp_err_t pipeline_init(const char *software)
 {
+    if (software) {
+        strlcpy(s_software, software, sizeof(s_software));
+    }
+    uint8_t mac[6];
+    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
+        snprintf(s_serial, sizeof(s_serial), "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4],
+                 mac[5]);
+    }
     if (camera_full_is_jpeg()) {
         const int w = camera_full_width();
         s_strip_bytes = (size_t)w * sensor_strip_rows() * 3;
@@ -288,24 +307,53 @@ static size_t write_all(FILE *f, const uint8_t *data, size_t len)
     return done;
 }
 
-/* Minimal EXIF APP1 with just the Orientation tag (big-endian TIFF). */
-static bool write_exif_orientation(FILE *f, uint8_t orientation)
+void pipeline_set_clock(int64_t epoch, int offset_min)
 {
-    const uint8_t app1[] = {
-        0xff, 0xe1, 0x00, 0x22,                         /* APP1, length 34 */
-        'E', 'x', 'i', 'f', 0x00, 0x00,                 /* EXIF header */
-        'M', 'M', 0x00, 0x2a, 0x00, 0x00, 0x00, 0x08,   /* TIFF header, IFD0 at 8 */
-        0x00, 0x01,                                     /* 1 entry */
-        0x01, 0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x01, /* Orientation, SHORT, 1 */
-        0x00, orientation, 0x00, 0x00,                  /* value */
-        0x00, 0x00, 0x00, 0x00,                         /* no next IFD */
-    };
-    return write_all(f, app1, sizeof(app1)) == sizeof(app1);
+    const struct timeval tv = {.tv_sec = (time_t)epoch};
+    settimeofday(&tv, NULL);
+    s_clock_offset_min = offset_min;
+    s_clock_set = true;
+    ESP_LOGI(TAG, "clock set: %lld, UTC%+d min", (long long)epoch, offset_min);
 }
 
-/* Save a JPEG (starting with FFD8), optionally inserting the EXIF orientation. */
-static pipe_result_t save_jpeg(const uint8_t *jpeg, size_t len, bool exif_portrait, int *out_number)
+bool pipeline_clock_is_set(void)
 {
+    return s_clock_set;
+}
+
+/* EXIF for one photo: stored size and orientation, plus the caller's text. */
+static size_t build_exif(uint8_t *out, size_t cap, const pipe_meta_t *meta, uint16_t orientation, int w, int h)
+{
+    char model[40], dt[20], off[7];
+    snprintf(model, sizeof(model), "Charmera-S3 (%s)", camera_sensor_name());
+    if (s_clock_set) {
+        exif_format_datetime((int64_t)time(NULL), s_clock_offset_min, dt, off);
+    }
+    const exif_info_t info = {
+        .make = "Charmera-S3",
+        .model = model,
+        .software = s_software,
+        .serial = s_serial[0] ? s_serial : NULL,
+        .description = meta ? meta->description : NULL,
+        .comment = meta ? meta->comment : NULL,
+        .datetime = s_clock_set ? dt : NULL,
+        .offset = s_clock_set ? off : NULL,
+        .orientation = orientation,
+        .width = (uint32_t)w,
+        .height = (uint32_t)h,
+    };
+    return exif_build(&info, out, cap);
+}
+
+/* Save a JPEG (starting with FFD8) with an EXIF segment inserted after SOI. */
+static pipe_result_t save_jpeg(const uint8_t *jpeg, size_t len, const pipe_meta_t *meta, uint16_t orientation,
+                               int w, int h, int *out_number)
+{
+    static uint8_t exif[EXIF_MAX];
+    const size_t exif_len = build_exif(exif, sizeof(exif), meta, orientation, w, h);
+    if (!exif_len) {
+        ESP_LOGW(TAG, "EXIF didn't fit; saving without it");
+    }
     storage_info_t info;
     if (storage_info(&info) != ESP_OK) {
         return PIPE_NO_CARD;
@@ -318,13 +366,8 @@ static pipe_result_t save_jpeg(const uint8_t *jpeg, size_t len, bool exif_portra
     if (!f) {
         return storage_status() == STORAGE_OK ? PIPE_WRITE_FAILED : PIPE_NO_CARD;
     }
-    bool ok;
-    if (exif_portrait) {
-        ok = write_all(f, jpeg, 2) == 2 && write_exif_orientation(f, EXIF_ORIENT_PORTRAIT) &&
-             write_all(f, jpeg + 2, len - 2) == len - 2;
-    } else {
-        ok = write_all(f, jpeg, len) == len;
-    }
+    const bool ok = write_all(f, jpeg, 2) == 2 && write_all(f, exif, exif_len) == exif_len &&
+                    write_all(f, jpeg + 2, len - 2) == len - 2;
     if (!ok) {
         storage_abort_photo(f, number);
         return storage_status() == STORAGE_OK ? PIPE_WRITE_FAILED : PIPE_NO_CARD;
@@ -336,8 +379,8 @@ static pipe_result_t save_jpeg(const uint8_t *jpeg, size_t len, bool exif_portra
     return PIPE_OK;
 }
 
-pipe_result_t pipeline_take_photo(look_t look, pipe_captured_cb on_captured, pipe_progress_cb on_progress,
-                                  void *ctx, int *out_number)
+pipe_result_t pipeline_take_photo(look_t look, const pipe_meta_t *meta, pipe_captured_cb on_captured,
+                                  pipe_progress_cb on_progress, void *ctx, int *out_number)
 {
     if (storage_status() != STORAGE_OK) {
         return PIPE_NO_CARD;
@@ -369,15 +412,19 @@ pipe_result_t pipeline_take_photo(look_t look, pipe_captured_cb on_captured, pip
     int number = 0;
     if (sensor_jpeg && look == LOOK_NORMAL) {
         /* Best quality: the sensor's own JPEG, untouched. */
-        res = save_jpeg(fb->buf, fb->len, true, &number);
+        res = save_jpeg(fb->buf, fb->len, meta, EXIF_ORIENT_PORTRAIT, fb->width, fb->height, &number);
         len = (int)fb->len;
         camera_capture_done(fb);
     } else {
+        /* Sensor-JPEG looks stay landscape (EXIF turns them); raw photos are rotated upright. */
+        const int w = sensor_jpeg ? camera_full_width() : camera_photo_width();
+        const int h = sensor_jpeg ? camera_full_height() : camera_photo_height();
         res = sensor_jpeg ? encode_sensor_jpeg(fb, look, on_progress, ctx, &len)
                           : encode_raw(fb, look, on_progress, ctx, &len);
         camera_capture_done(fb);
         if (res == PIPE_OK) {
-            res = save_jpeg(s_obuf, len, sensor_jpeg, &number);
+            res = save_jpeg(s_obuf, len, meta, sensor_jpeg ? EXIF_ORIENT_PORTRAIT : EXIF_ORIENT_UPRIGHT, w, h,
+                            &number);
         }
     }
     if (res != PIPE_OK) {

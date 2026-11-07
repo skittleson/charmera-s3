@@ -6,7 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_CMD 32
+#define MAX_CMD 40
+#define EPOCH_MIN 1577836800LL /* 2020-01-01: anything earlier is a bad clock */
+#define OFFSET_MIN_LO (-12 * 60)
+#define OFFSET_MIN_HI (14 * 60)
 #define MAX_WORDS 3
 
 /* Number in [0, count) with nothing trailing; -1 otherwise. */
@@ -44,6 +47,28 @@ const char *remote_parse(const char *text, size_t len, int look_count, int inter
         return "unknown command";
     }
     out->arg = -1;
+    out->epoch = 0;
+    out->offset_min = 0;
+    if (strcmp(w[0], "time") == 0) {
+        char *end;
+        if (n < 2 || n > 3) {
+            return "bad time";
+        }
+        const long long e = strtoll(w[1], &end, 10);
+        if (*end || e < EPOCH_MIN) {
+            return "bad time";
+        }
+        if (n == 3) {
+            const long o = strtol(w[2], &end, 10);
+            if (*end || o < OFFSET_MIN_LO || o > OFFSET_MIN_HI) {
+                return "bad time";
+            }
+            out->offset_min = (int)o;
+        }
+        out->kind = RC_TIME;
+        out->epoch = e;
+        return NULL;
+    }
     if (strcmp(w[0], "look") == 0) {
         if (n != 2 || (out->arg = parse_index(w[1], look_count)) < 0) {
             return "bad look";
@@ -91,6 +116,9 @@ const char *remote_parse(const char *text, size_t len, int look_count, int inter
 
 const char *remote_check(const remote_cmd_t *c, bool lapse_running)
 {
+    if (c->kind == RC_TIME) {
+        return NULL; /* setting the clock never disturbs a run */
+    }
     if (c->kind == RC_LAPSE_STOP) {
         return lapse_running ? NULL : "not running";
     }
@@ -166,7 +194,7 @@ size_t remote_status_json(const remote_status_t *s, char *out, size_t len)
     put_str(&k, s->last);
     put(&k, ",\"error\":");
     put_str(&k, s->error);
-    put(&k, "}");
+    put(&k, ",\"clock\":%s}", s->clock_set ? "true" : "false");
     return finish(&k);
 }
 

@@ -92,6 +92,9 @@ async function setup() {
   const info = JSON.parse(dec.decode(await chars.info.readValue()));
   fill($('look'), info.looks);
   fill($('interval'), info.intervals);
+  // The camera has no clock of its own: give it ours so photos get EXIF dates.
+  const now = `time ${Math.floor(Date.now() / 1000)} ${-new Date().getTimezoneOffset()}`;
+  await chars.command.writeValueWithResponse(enc.encode(now));
   chars.status.addEventListener('characteristicvaluechanged', onStatus);
   await chars.status.startNotifications();
   await readStatus();

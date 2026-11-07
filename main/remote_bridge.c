@@ -11,6 +11,7 @@
 #include "lapse_logic.h"
 #include "looks.h"
 #include "remote.h"
+#include "pipeline.h"
 #include "settings.h"
 #include "storage.h"
 #include "ui.h"
@@ -107,6 +108,7 @@ void remote_bridge_publish(void)
     st.camera = camera_sensor_name();
     ui_camera_fill_status(&st);
     strlcpy(st.error, s_error, sizeof(st.error));
+    st.clock_set = pipeline_clock_is_set();
     static char json[512];
     if (remote_status_json(&st, json, sizeof(json))) {
         remote_publish(json, st.battery_pct);
@@ -127,7 +129,14 @@ void remote_bridge_poll(void)
         now_please = true;
     }
     remote_cmd_t c;
-    if (remote_take_command(&c)) {
+    const bool got = remote_take_command(&c);
+    if (got && c.kind == RC_TIME) {
+        pipeline_set_clock(c.epoch, c.offset_min); /* no screen switch, no wake-up */
+        if (!rejected[0]) {
+            s_error[0] = '\0';
+        }
+        now_please = true;
+    } else if (got) {
         ui_show_now(UI_SCREEN_CAMERA);
         ui_menu_dismiss(); /* an open menu's callback could otherwise undo the command */
         ui_note_activity(); /* also wakes a sleeping screen */

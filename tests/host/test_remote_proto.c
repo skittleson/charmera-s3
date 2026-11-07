@@ -70,15 +70,32 @@ static void test_parse_rejects_bad_numbers(void)
     TEST_ASSERT_EQUAL_STRING("unknown command", parse_err("shoot now"));
 }
 
+static void test_parse_time(void)
+{
+    remote_cmd_t c = parse_ok("time 1793072525 -480");
+    TEST_ASSERT_EQUAL(RC_TIME, c.kind);
+    TEST_ASSERT_TRUE(c.epoch == 1793072525LL);
+    TEST_ASSERT_EQUAL(-480, c.offset_min);
+    c = parse_ok("time 1793072525");
+    TEST_ASSERT_EQUAL(0, c.offset_min);
+    TEST_ASSERT_EQUAL_STRING("bad time", parse_err("time"));
+    TEST_ASSERT_EQUAL_STRING("bad time", parse_err("time 12345"));        /* before 2020 */
+    TEST_ASSERT_EQUAL_STRING("bad time", parse_err("time abc"));
+    TEST_ASSERT_EQUAL_STRING("bad time", parse_err("time 1793072525 900")); /* beyond UTC+14 */
+    TEST_ASSERT_EQUAL_STRING("bad time", parse_err("time 1793072525 -721"));
+}
+
 static void test_check_refuses_changes_while_running(void)
 {
     const remote_cmd_kind_t refused[] = {RC_LOOK, RC_MODE_SINGLE, RC_MODE_LAPSE, RC_INTERVAL, RC_SHOOT, RC_LAPSE_START};
     for (size_t i = 0; i < sizeof(refused) / sizeof(refused[0]); i++) {
-        remote_cmd_t c = {refused[i], 1};
+        remote_cmd_t c = {.kind = refused[i], .arg = 1};
         TEST_ASSERT_EQUAL_STRING("time-lapse running", remote_check(&c, true));
         TEST_ASSERT_NULL(remote_check(&c, false));
     }
-    remote_cmd_t stop = {RC_LAPSE_STOP, -1};
+    remote_cmd_t t = {.kind = RC_TIME};
+    TEST_ASSERT_NULL(remote_check(&t, true)); /* setting the clock never disturbs a run */
+    remote_cmd_t stop = {.kind = RC_LAPSE_STOP, .arg = -1};
     TEST_ASSERT_NULL(remote_check(&stop, true));
     TEST_ASSERT_EQUAL_STRING("not running", remote_check(&stop, false));
 }
@@ -89,6 +106,7 @@ static remote_status_t sample(void)
         .photos = 91, .left = 120, .battery_pct = 82, .usb = false, .camera = "OV5640",
         .look = 3, .look_name = "Black & White", .lapse_mode = true, .interval = 1, .interval_name = "10 s",
         .lapse_running = true, .frames = 12, .elapsed_s = 75, .card = REMOTE_CARD_OK, .busy = false,
+        .clock_set = true,
     };
     strcpy(s.folder, "101LAPSE");
     strcpy(s.last, "IMG_0093");
@@ -108,7 +126,7 @@ static void test_status_json_fields(void)
                           "\"camera\":\"OV5640\"", "\"look\":3", "\"lookName\":\"Black & White\"",
                           "\"mode\":\"lapse\"", "\"interval\":1", "\"intervalName\":\"10 s\"", "\"running\":true",
                           "\"frames\":12", "\"elapsed\":75", "\"folder\":\"101LAPSE\"", "\"card\":\"ok\"",
-                          "\"busy\":false", "\"last\":\"IMG_0093\"", "\"error\":\"\""};
+                          "\"busy\":false", "\"last\":\"IMG_0093\"", "\"error\":\"\"", "\"clock\":true"};
     for (size_t i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
         TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, want[i]), want[i]);
     }
@@ -153,6 +171,7 @@ int main(void)
     RUN_TEST(test_parse_each_command);
     RUN_TEST(test_parse_tolerates_whitespace_and_case);
     RUN_TEST(test_parse_rejects_bad_numbers);
+    RUN_TEST(test_parse_time);
     RUN_TEST(test_check_refuses_changes_while_running);
     RUN_TEST(test_status_json_fields);
     RUN_TEST(test_status_json_escapes_quotes);

@@ -76,9 +76,14 @@ async def main():
               str(info))
         check("status has every field", {"photos", "left", "battery", "usb", "camera", "look", "lookName", "mode",
                                          "interval", "intervalName", "running", "frames", "elapsed", "folder",
-                                         "card", "busy", "last", "error"} <= set(st), str(st))
+                                         "card", "busy", "last", "error", "clock"} <= set(st), str(st))
         print(f"      camera {st['camera']}, {st['photos']} photos, {st['left']} left, battery {st['battery']}%"
               f"{' (USB)' if st['usb'] else ''}, card {st['card']}")
+
+        await cam.send(f"time {int(time.time())} {-time.timezone // 60 if not time.localtime().tm_isdst else -time.altzone // 60}")
+        check("time -> clock set", await cam.wait(lambda s: s.get("clock") is True), str(cam.status))
+        await cam.send("time 12")
+        check("time 12 -> bad time", await cam.wait(lambda s: s["error"] == "bad time"), str(cam.status))
 
         await cam.send("look 5")
         check("look 5 -> notified", await cam.wait(lambda s: s["look"] == 5 and s["lookName"] == info["looks"][5]),

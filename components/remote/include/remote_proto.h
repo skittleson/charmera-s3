@@ -15,15 +15,18 @@ typedef enum {
     RC_SHOOT,       /* shoot */
     RC_LAPSE_START, /* lapse start */
     RC_LAPSE_STOP,  /* lapse stop */
+    RC_TIME,        /* time <unix seconds> [utc offset minutes] */
 } remote_cmd_kind_t;
 
 typedef struct {
     remote_cmd_kind_t kind;
-    int arg; /* -1 = none */
+    int arg;        /* -1 = none */
+    int64_t epoch;  /* RC_TIME */
+    int offset_min; /* RC_TIME, -720..840 */
 } remote_cmd_t;
 
 /* Parse len bytes (no NUL needed; surrounding whitespace and case ignored).
-   NULL on success, else a short static reason: "unknown command", "bad look", "bad interval". */
+   NULL on success, else a short static reason: "unknown command", "bad look", "bad interval", "bad time". */
 const char *remote_parse(const char *text, size_t len, int look_count, int interval_count, remote_cmd_t *out);
 
 /* NULL if c may run now, else "time-lapse running" or "not running". */
@@ -48,6 +51,7 @@ typedef struct {
     bool busy;
     char last[24];  /* "" = none yet */
     char error[32]; /* "" = none */
+    bool clock_set; /* EXIF dates available (time was sent) */
 } remote_status_t;
 
 /* Compact JSON. Returns its length, or 0 if it doesn't fit (never truncated). */

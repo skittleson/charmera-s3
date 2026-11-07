@@ -32,7 +32,7 @@ void app_main(void)
         ESP_LOGE(TAG, "camera not found");
     }
     ESP_LOGI(TAG, "camera: %s", camera_sensor_name());
-    ESP_ERROR_CHECK(pipeline_init());
+    ESP_ERROR_CHECK(pipeline_init("charmera-s3 " APP_VERSION));
     ui_reserve();
     storage_status();
     power_init();

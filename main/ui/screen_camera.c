@@ -322,8 +322,12 @@ static void shoot(void)
         lv_obj_set_hidden(s.status, false);
         display_unlock();
     }
+    char desc[96], comment[160];
+    snprintf(desc, sizeof(desc), "Charmera-S3 photo, look %s", look_name(s.current));
+    snprintf(comment, sizeof(comment), "mode=single; look=%s; camera=%s", look_name(s.current), camera_sensor_name());
+    const pipe_meta_t meta = {desc, comment};
     int number = 0;
-    const pipe_result_t r = pipeline_take_photo(s.current, on_captured, on_progress, NULL, &number);
+    const pipe_result_t r = pipeline_take_photo(s.current, &meta, on_captured, on_progress, NULL, &number);
     ESP_LOGI(TAG, "shot -> %s (IMG_%04d)", pipeline_result_text(r), number);
     if (r == PIPE_OK) {
         snprintf(s_last, sizeof(s_last), "IMG_%04d", number);
@@ -435,8 +439,18 @@ static void lapse_frame(void)
     s.busy = true;
     remote_bridge_publish();
     set_status("Time-lapse frame...");
+    const unsigned frame = (unsigned)s.lapse.frames + 1;
+    const unsigned every_s = (unsigned)(lapse_interval_ms(s.lapse.interval) / 1000);
+    char desc[96], comment[200];
+    snprintf(desc, sizeof(desc), "Time-lapse %s frame %u, every %s, look %s", s.lapse.folder, frame,
+             lapse_interval_name(s.lapse.interval), look_name(s.current));
+    snprintf(comment, sizeof(comment),
+             "mode=timelapse; folder=%s; frame=%u; interval_s=%u; elapsed_s=%u; look=%s; camera=%s", s.lapse.folder,
+             frame, every_s, (unsigned)((now_ms() - s.lapse.start_ms) / 1000), look_name(s.current),
+             camera_sensor_name());
+    const pipe_meta_t meta = {desc, comment};
     int number = 0;
-    const pipe_result_t r = pipeline_take_photo(s.current, on_captured, NULL, NULL, &number);
+    const pipe_result_t r = pipeline_take_photo(s.current, &meta, on_captured, NULL, NULL, &number);
     set_status(NULL);
     s.busy = false;
     s.next_status = 0;
@@ -649,6 +663,8 @@ const char *ui_camera_remote(const remote_cmd_t *c)
     case RC_LAPSE_STOP:
         lapse_stop(NULL); /* the page asked for confirmation already */
         break;
+    case RC_TIME:
+        break; /* handled by the bridge */
     }
     return NULL;
 }
