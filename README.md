@@ -56,6 +56,7 @@ you turn it on.
   - **OV5640-AF:** 1920 × 2560 portrait photos, with autofocus on every shot.
   - **OV2640 (stock):** 1200 × 1600 portrait photos, encoded by the firmware.
 - **The viewfinder matches the photo.** The live view and the photo encoder share the same C code for each look, and host tests check that both give the same result.
+- **Time-lapse:** one photo every 5 s, 10 s, 30 s, 1 min or 5 min, saved in its own card folder and ready to turn into a video. It keeps shooting while the screen sleeps.
 - **Gallery:** newest first. Step back through your shots and delete one or all. Delete prompts always have Cancel selected first.
 - **Settings:** card size, free and used space, photo count, battery, brightness, an
   on-screen level, and card format.
@@ -71,7 +72,7 @@ Charmera's tiny physical controls.
 | | On the camera screen | In menus, the gallery and settings |
 |---|---|---|
 | **Press** | 📷 take a photo | move down / next (older) photo |
-| **Hold** (~1 s) | open the menu: *Camera · Looks · Gallery · Settings* | choose |
+| **Hold** (~1 s) | open the menu: *Camera · Looks · Time-lapse · Gallery · Settings* | choose |
 | **Double press** | — | back / close |
 
 Hold it **like a phone, with USB-C at the bottom**. Turn on **Level** in Settings for a
@@ -140,9 +141,32 @@ On Linux, your user needs to be in the `dialout` group to use `/dev/ttyACM0`.
 | OV5640-AF | 2560 × 1920 JPEG with an EXIF orientation tag, so it displays as 1920 × 2560 portrait | Normal: about 4–6 s. Other looks: about 8–14 s. |
 | OV2640 | 1200 × 1600 portrait JPEG | about 6–7 s |
 
-Files go in `DCIM/100CHARM/`. Numbering continues from the highest-numbered file on the
+Photos go in `DCIM/100CHARM/`. Numbering continues from the highest-numbered file on the
 card, and existing files are never overwritten. To copy photos off, put the card in a card
 reader.
+
+### ⏱️ Time-lapse
+
+1. Hold BOOT, then choose **Time-lapse** and an interval. The badge at the top of the screen shows `TIME-LAPSE every 10 s`.
+2. Prop the camera up and **press** to start. The badge counts frames, run time and the time to the next frame.
+3. **Press** again and confirm **Stop**. Cancel is selected first, so a bump won't end the run.
+
+Each run gets its own folder (`DCIM/101LAPSE`, `102LAPSE`, and so on) of full-quality
+`IMG_0001.JPG`, `IMG_0002.JPG` and so on frames. Each frame uses the current look. Frames
+stay out of the gallery and the photo count. The screen dims and switches off as usual
+while the run continues. For intervals of 30 s and longer, the sensor sleeps between frames
+to stay cool. A frame takes as long as a normal photo (about 4–14 s, depending on the camera
+and look), so with a 5 s interval the camera simply shoots as fast as it can.
+
+To turn a run into a video, put the card in a PC with [ffmpeg](https://ffmpeg.org) installed:
+
+```sh
+ffmpeg -framerate 24 -i /media/$USER/CARD/DCIM/101LAPSE/IMG_%04d.JPG \
+       -vf "scale=1080:-2,format=yuv420p" -c:v libx264 -crf 20 timelapse.mp4
+```
+
+Replace `/media/$USER/CARD` with wherever your card mounts. At 24 fps, a 10 s interval
+turns 1 hour into 15 seconds of video.
 
 ## 🔬 How it works
 
@@ -185,6 +209,7 @@ the board:
 | OV2640 after the dual-camera rework | ⚠️ no: worked before the rework, not re-checked since |
 | Format card | ⚠️ no: built, but never run on a card |
 | Reading photos in a PC card reader | ⚠️ no: files were checked over USB serial instead |
+| Time-lapse | ⚠️ no: built and host-tested, not yet run on the board |
 
 Board test results are in [`docs/acceptance-2026-11-06.md`](docs/acceptance-2026-11-06.md).
 

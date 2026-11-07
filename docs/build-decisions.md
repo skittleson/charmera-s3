@@ -40,6 +40,15 @@ Every call made on the owner's behalf during the build, in order, from the build
 - Final: Ruling: AF in viewfinder (single or continuous) broke later full-res switches; AF single now runs at full res right before the grab (~1.2 s added shutter lag).
 - Final: Ruling (owner: "camera only on while shown"): sensor PWDN whenever the camera screen isn't showing (gallery/settings/screen off), back on when it is; OV5640 XCLK 24→20 MHz, viewfinder PLL cut to a third (SYSCLK 15 MHz, ~7 fps), AF lens released after each shot. Module still very hot per owner; owner investigating a heat sink — cost: choppier viewfinder; quality q12 retested only for single shots at 20 MHz (2 shots ok).
 
+## Time-lapse (owner: "just do it"; all designer calls)
+
+- Ruling: menu entry "Time-lapse" -> interval menu (5 s / 10 s / 30 s / 1 min / 5 min, default 10 s, saved in NVS); press starts; press or hold while running opens "Stop time-lapse?" with Cancel first. "Camera" in the menu returns to plain photos.
+- Ruling: each run writes full-quality frames (current look) to a new DCF folder DCIM/NNNLAPSE (101..999) as IMG_0001.JPG...; frames are not in the gallery or the photo count. Video is assembled on a PC (ffmpeg recipe in README) - no on-device AVI in this version.
+- Ruling: missed slots (save longer than the interval) are skipped, not caught up; the next frame starts at once.
+- Ruling: keeps shooting while the screen dims or sleeps, and while a dialog is open. Intervals >= 30 s power the sensor down between frames (heat); the last frame stays on screen.
+- Ruling: stops on No card / Card full / write failure, or after 3 consecutive capture failures, with a toast giving the frame count and folder.
+- Not yet run on the board.
+
 ## Deferred minor issues (from the final review)
 
 - "card full" estimate can still fail mid-write on the last photo (now returns Card full via free-space check before writing).
