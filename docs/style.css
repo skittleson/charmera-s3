@@ -1,0 +1,77 @@
+:root {
+  --bg: #101010;
+  --panel: #1c1c1c;
+  --fg: #f2f2f2;
+  --dim: #8a8a8a;
+  --accent: #ffc400;
+  --danger: #ff5a4a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+main { max-width: 440px; margin: 0 auto; padding: 16px; }
+
+h1 { margin: 0; font-size: 1.6rem; }
+.sub { margin: 0 0 16px; color: var(--dim); }
+.muted { color: var(--dim); font-size: 0.9rem; }
+.notice { background: #3a2a00; border: 1px solid var(--accent); padding: 12px; border-radius: 8px; }
+.error { color: var(--danger); }
+
+button, select {
+  font: inherit;
+  color: var(--fg);
+  background: var(--panel);
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+button { cursor: pointer; }
+button:disabled, select:disabled { opacity: 0.4; cursor: not-allowed; }
+button.primary { background: var(--accent); color: #000; border: none; font-weight: 600; width: 100%; }
+button.danger { border-color: var(--danger); color: var(--danger); }
+
+#connect-box { margin-bottom: 16px; }
+#panel.disabled { opacity: 0.45; pointer-events: none; }
+
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.card { background: var(--panel); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; }
+.card.wide { margin-bottom: 8px; }
+.label { color: var(--dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.value { font-size: 1.4rem; font-weight: 600; }
+.value.small { font-size: 1rem; }
+
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0; }
+.row select { flex: 1; max-width: 70%; }
+
+.seg { display: flex; flex: 1; max-width: 70%; }
+.seg button { flex: 1; border-radius: 0; }
+.seg button:first-child { border-radius: 8px 0 0 8px; }
+.seg button:last-child { border-radius: 0 8px 8px 0; }
+.seg button[aria-checked="true"] { background: var(--accent); color: #000; border-color: var(--accent); }
+
+.shutter {
+  display: block;
+  width: 88px;
+  height: 88px;
+  margin: 20px auto;
+  border-radius: 50%;
+  background: var(--fg);
+  border: 6px solid #444;
+  box-shadow: 0 0 0 3px var(--fg);
+  padding: 0;
+}
+.shutter:active:not(:disabled) { transform: scale(0.94); }
+.shutter.busy { background: var(--accent); }
+
+.buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+footer { margin-top: 24px; }
+footer a { color: var(--accent); }

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101010">
+  <title>Charmera-S3 remote</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>📸 Charmera-S3</h1>
+      <p class="sub">Bluetooth remote</p>
+    </header>
+
+    <p id="unsupported" class="notice" hidden>
+      This browser can't use Bluetooth. Open this page in <b>Chrome</b> or <b>Edge</b> on a computer or
+      Android phone. iPhone browsers don't support Web Bluetooth.
+    </p>
+
+    <section id="connect-box">
+      <button id="connect" class="primary">Connect to camera</button>
+      <p id="conn-state" class="muted">Not connected</p>
+    </section>
+
+    <section id="panel" class="disabled">
+      <div class="cards">
+        <div class="card"><span class="label">Photos</span><span id="photos" class="value">–</span></div>
+        <div class="card"><span class="label">Left</span><span id="left" class="value">–</span></div>
+        <div class="card"><span class="label">Battery</span><span id="battery" class="value">–</span></div>
+        <div class="card"><span class="label">Camera</span><span id="camera" class="value">–</span></div>
+      </div>
+
+      <div id="lapse-card" class="card wide" hidden>
+        <span class="label">Time-lapse</span>
+        <span id="lapse" class="value small">–</span>
+      </div>
+
+      <p id="error" class="error" hidden></p>
+      <p id="last" class="muted"></p>
+
+      <label class="row">Look
+        <select id="look"></select>
+      </label>
+
+      <div class="row">Mode
+        <div class="seg" role="radiogroup">
+          <button id="mode-single" role="radio">Single shot</button>
+          <button id="mode-lapse" role="radio">Time-lapse</button>
+        </div>
+      </div>
+
+      <label class="row">Every
+        <select id="interval"></select>
+      </label>
+
+      <button id="shoot" class="shutter" aria-label="Take a photo"></button>
+
+      <div class="buttons">
+        <button id="lapse-start">Start time-lapse</button>
+        <button id="lapse-stop" class="danger">Stop time-lapse</button>
+      </div>
+    </section>
+
+    <footer class="muted">
+      Commands and UUIDs are in the
+      <a href="https://github.com/skittleson/charmera-s3#-bluetooth-remote">README</a>.
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
