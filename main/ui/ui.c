@@ -9,6 +9,7 @@
 #include "freertos/task.h"
 #include "camera.h"
 #include "power.h"
+#include "remote_bridge.h"
 
 static const char *TAG = "ui";
 
@@ -224,6 +225,13 @@ void ui_show(ui_screen_id_t id)
     s_pending = id;
 }
 
+void ui_show_now(ui_screen_id_t id)
+{
+    if (s_current != SCREENS[id]) {
+        switch_to(id);
+    }
+}
+
 void ui_camera_wake(void)
 {
     if (s_current == &ui_camera_screen) {
@@ -253,6 +261,7 @@ static void ui_task(void *arg)
                 s_current->event(e);
             }
         }
+        remote_bridge_poll();
         if (s_pending >= 0) {
             const int id = s_pending;
             s_pending = -1;

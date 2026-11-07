@@ -33,6 +33,15 @@ void ui_gallery_reserve(void);
 /* Start the UI task on the camera screen. */
 void ui_start(void);
 void ui_show(ui_screen_id_t id);
+/* Switch at once if another screen is showing. UI task only. */
+void ui_show_now(ui_screen_id_t id);
+
+/* ---- Bluetooth remote hooks (camera screen; UI task only) ---- */
+#include "remote_proto.h"
+/* Run a remote command on the camera screen. NULL, or a short error reason. */
+const char *ui_camera_remote(const remote_cmd_t *c);
+/* Fill look, mode, interval, lapse, busy and last. */
+void ui_camera_fill_status(remote_status_t *st);
 
 /* Called on every input event; feeds the idle timer. */
 void ui_note_activity(void);

@@ -32,3 +32,5 @@ i2c_master_bus_handle_t board_i2c_bus(void);
 
 void  board_backlight_set(uint8_t percent);
 float board_battery_volts(void);
+/* Rough LiPo charge for a voltage: 3.3 V = 0 %, 4.2 V = 100 %. */
+int board_battery_percent(float volts);

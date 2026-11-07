@@ -166,3 +166,9 @@ float board_battery_volts(void)
     }
     return (raw / 4095.0f) * 3.3f * BAT_DIVIDER;
 }
+
+int board_battery_percent(float volts)
+{
+    int p = (int)((volts - 3.3f) / (4.2f - 3.3f) * 100.0f + 0.5f);
+    return p < 0 ? 0 : (p > 100 ? 100 : p);
+}

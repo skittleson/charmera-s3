@@ -15,6 +15,7 @@
 #include "looks.h"
 #include "pipeline.h"
 #include "power.h"
+#include "remote_bridge.h"
 #include "settings.h"
 #include "storage.h"
 #include "ui.h"
@@ -56,6 +57,9 @@ static struct {
         char folder[9];
     } lapse;
 } s;
+
+/* Last saved file, for the Bluetooth status; survives screen changes. */
+static char s_last[24];
 
 static int64_t now_ms(void)
 {
@@ -206,6 +210,7 @@ static void leave(void)
     if (s.lapse.mode == LAPSE_RUNNING) {
         lapse_stop(NULL);
     }
+    s.lapse.mode = LAPSE_OFF; /* the camera screen always opens in single shot */
     camera_power(false); /* nothing to show: don't run the sensor */
 }
 
@@ -302,6 +307,7 @@ static void shoot(void)
         return;
     }
     s.busy = true;
+    remote_bridge_publish();
     /* Shutter feedback right away: flash, then hold the last frame while the sensor
        switches to full resolution. */
     if (display_lock(200)) {
@@ -319,6 +325,9 @@ static void shoot(void)
     int number = 0;
     const pipe_result_t r = pipeline_take_photo(s.current, on_captured, on_progress, NULL, &number);
     ESP_LOGI(TAG, "shot -> %s (IMG_%04d)", pipeline_result_text(r), number);
+    if (r == PIPE_OK) {
+        snprintf(s_last, sizeof(s_last), "IMG_%04d", number);
+    }
     set_status(NULL);
     ui_toast(pipeline_result_text(r), r == PIPE_OK ? 1000 : 2500);
     if (display_lock(200)) {
@@ -330,6 +339,7 @@ static void shoot(void)
     ui_note_activity(); /* idle time counts from the end of the save */
     s.busy = false;
     s.next_status = 0;
+    remote_bridge_publish();
 }
 
 /* ---------- time-lapse ---------- */
@@ -423,6 +433,7 @@ static void lapse_frame(void)
     const bool asleep = power_is_asleep();
     camera_power(true);
     s.busy = true;
+    remote_bridge_publish();
     set_status("Time-lapse frame...");
     int number = 0;
     const pipe_result_t r = pipeline_take_photo(s.current, on_captured, NULL, NULL, &number);
@@ -434,6 +445,7 @@ static void lapse_frame(void)
         s.lapse.frames++;
         s.lapse.fails = 0;
         ESP_LOGI(TAG, "time-lapse frame %u (%s/IMG_%04d)", (unsigned)s.lapse.frames, s.lapse.folder, number);
+        snprintf(s_last, sizeof(s_last), "%s/IMG_%04d", s.lapse.folder, number);
     } else {
         ESP_LOGW(TAG, "time-lapse frame failed: %s", pipeline_result_text(r));
         const bool fatal = r == PIPE_NO_CARD || r == PIPE_CARD_FULL || r == PIPE_WRITE_FAILED;
@@ -447,6 +459,7 @@ static void lapse_frame(void)
         s.frozen = true;
     }
     lapse_repaint();
+    remote_bridge_publish();
 }
 
 static void on_stop_confirm(int yes)
@@ -581,6 +594,72 @@ void ui_camera_freeze(bool on)
     s.frozen = on;
 }
 
+
+/* ---------- Bluetooth remote ---------- */
+
+const char *ui_camera_remote(const remote_cmd_t *c)
+{
+    const char *err = remote_check(c, s.lapse.mode == LAPSE_RUNNING);
+    if (err) {
+        return err;
+    }
+    switch (c->kind) {
+    case RC_LOOK:
+        on_look(c->arg);
+        break;
+    case RC_MODE_SINGLE:
+        s.lapse.mode = LAPSE_OFF;
+        lapse_repaint();
+        break;
+    case RC_MODE_LAPSE:
+        on_interval(c->arg >= 0 ? c->arg : s.lapse.interval);
+        break;
+    case RC_INTERVAL:
+        settings_set_lapse_interval(c->arg);
+        s.lapse.interval = c->arg;
+        lapse_repaint();
+        break;
+    case RC_SHOOT:
+        if (storage_status() != STORAGE_OK) {
+            return "no card";
+        }
+        if (!storage_numbers_left() || storage_photos_remaining_now() == 0) {
+            return "card full";
+        }
+        shoot(); /* one ordinary photo, whatever the mode */
+        break;
+    case RC_LAPSE_START:
+        if (s.lapse.mode == LAPSE_OFF) {
+            on_interval(s.lapse.interval);
+        }
+        lapse_start();
+        if (s.lapse.mode != LAPSE_RUNNING) {
+            return "couldn't start";
+        }
+        break;
+    case RC_LAPSE_STOP:
+        lapse_stop(NULL); /* the page asked for confirmation already */
+        break;
+    }
+    return NULL;
+}
+
+void ui_camera_fill_status(remote_status_t *st)
+{
+    st->look = settings_look();
+    st->look_name = look_name(settings_look());
+    st->lapse_mode = s.lapse.mode != LAPSE_OFF;
+    st->interval = settings_lapse_interval();
+    st->interval_name = lapse_interval_name(st->interval);
+    st->lapse_running = s.lapse.mode == LAPSE_RUNNING;
+    if (st->lapse_running) {
+        st->frames = s.lapse.frames;
+        st->elapsed_s = (uint32_t)((now_ms() - s.lapse.start_ms) / 1000);
+    }
+    strlcpy(st->folder, s.lapse.folder, sizeof(st->folder));
+    st->busy = s.busy;
+    strlcpy(st->last, s_last, sizeof(st->last));
+}
 
 const ui_screen_t ui_camera_screen = {
     .enter = enter,

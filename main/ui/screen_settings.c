@@ -23,12 +23,6 @@ static struct {
     int64_t next_info;
 } s;
 
-static int battery_pct(float v)
-{
-    int p = (int)((v - 3.3f) / (4.2f - 3.3f) * 100.0f + 0.5f);
-    return p < 0 ? 0 : (p > 100 ? 100 : p);
-}
-
 static void fmt_gb(char *out, size_t n, uint64_t bytes)
 {
     if (bytes >= 1000ull * 1000 * 1000) {
@@ -48,7 +42,7 @@ static void refresh_info(void)
     if (v >= 4.5f) {
         snprintf(bat, sizeof(bat), "USB power");
     } else {
-        snprintf(bat, sizeof(bat), "%.2f V (%d%%)", v, battery_pct(v));
+        snprintf(bat, sizeof(bat), "%.2f V (%d%%)", v, board_battery_percent(v));
     }
     if (storage_info(&info) == ESP_OK) {
         char total[16], freeb[16], used[16];
