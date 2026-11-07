@@ -43,7 +43,7 @@ function render() {
   $('lapse-card').hidden = !s.running;
   if (s.running) {
     const m = Math.floor(s.elapsed / 60), sec = String(s.elapsed % 60).padStart(2, '0');
-    $('lapse').textContent = `● ${s.frames} frames · ${m}:${sec} · ${s.folder}`;
+    $('lapse').textContent = `● ${s.frames} frame${s.frames === 1 ? '' : 's'} · ${m}:${sec} · ${s.folder}`;
   }
   $('error').hidden = !s.error;
   $('error').textContent = s.error ? `Camera said: ${s.error}` : '';

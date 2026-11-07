@@ -51,6 +51,15 @@ Every call made on the owner's behalf during the build, in order, from the build
 - Fixed: with the sensor asleep between frames the viewfinder loop spun without yielding and tripped the task watchdog every 5 s (the run itself kept working). It now waits 20 ms per loop; built and flashed, but not re-run on the board (owner skipped).
 - Dev note: opening the serial log (tools/serlog.py) restarts the board, which ends a running time-lapse; its frames already on the card are kept.
 
+## Bluetooth remote (owner: nRF Connect + GitHub Pages web page; designer calls below)
+
+- Ruling: one custom service c4a30000-7b6e-4f0a-9d2e-5a1c8e3f6b20 with Status (read/notify JSON), Command (write text), Info (read JSON), plus the standard Battery Service; no pairing; one connection.
+- Ruling: changing look/mode/interval or shooting during a time-lapse is refused with an error (the run continues); `shoot` takes one photo in any mode; `lapse start` switches to time-lapse if needed; `lapse stop` needs no on-camera confirm (the page confirms). Mode is not kept across a reboot.
+- Ruling: Bluetooth on by default, Settings toggle; Off fully deinitialises NimBLE. NimBLE host memory is in PSRAM, but the controller still takes ~40 KB of internal RAM (free internal 95 -> 56 KB, largest block 54 -> 31 KB). Photos (sensor JPEG, re-encoded look) and time-lapse frames all saved while connected.
+- Ruling: Settings list now scrolls (5 rows no longer fit).
+- Board: tools/ble_test.py 17/17 from the PC (bleak); tools/web_test.py 14/14 in a headless Chrome with Web Bluetooth enabled. One earlier web_test run failed the look-dropdown check once (2/14 failed); three later runs passed 14/14 and it didn't reproduce.
+- Known: the "photos left" estimate drifts after time-lapse runs because small frames lower the average photo size.
+
 ## Deferred minor issues (from the final review)
 
 - "card full" estimate can still fail mid-write on the last photo (now returns Card full via free-space check before writing).

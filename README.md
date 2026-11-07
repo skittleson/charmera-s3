@@ -57,9 +57,10 @@ you turn it on.
   - **OV2640 (stock):** 1200 × 1600 portrait photos, encoded by the firmware.
 - **The viewfinder matches the photo.** The live view and the photo encoder share the same C code for each look, and host tests check that both give the same result.
 - **Time-lapse:** one photo every 5 s, 10 s, 30 s, 1 min or 5 min, saved in its own card folder and ready to turn into a video. It keeps shooting while the screen sleeps.
+- **Bluetooth remote:** check the camera's status and take photos, change the look, or run a time-lapse from a web page in Chrome or from nRF Connect.
 - **Gallery:** newest first. Step back through your shots and delete one or all. Delete prompts always have Cancel selected first.
 - **Settings:** card size, free and used space, photo count, battery, brightness, an
-  on-screen level, and card format.
+  on-screen level, Bluetooth on/off, and card format.
 - **Safe saves.** Every photo is written to a temporary file, synced, then renamed, so pulling the card or losing power never leaves a half-written `IMG_xxxx.JPG`.
 - **Battery-friendly.** The screen dims after 30 s and switches off after 3 min, and the camera sensor only runs while the viewfinder is on screen.
 - **Standard card layout:** `DCIM/100CHARM/IMG_0001.JPG`, which any PC or photo app can read.
@@ -168,6 +169,36 @@ ffmpeg -framerate 24 -i /media/$USER/CARD/DCIM/101LAPSE/IMG_%04d.JPG \
 Replace `/media/$USER/CARD` with wherever your card mounts. At 24 fps, a 10 s interval
 turns 1 hour into 15 seconds of video.
 
+## 📶 Bluetooth remote
+
+<img src="docs/images/remote.png" alt="The web remote connected to the camera during a time-lapse: photo, battery and camera cards, a running time-lapse card, the look and mode controls, the shutter button and the Stop button" width="320" align="right">
+
+The camera advertises over Bluetooth LE as **Charmera-S3**. Bluetooth is on by default;
+turn it off in Settings to save memory and battery.
+
+**Web page.** Open **https://skittleson.github.io/charmera-s3/** in **Chrome or Edge** on
+Android, Windows, macOS or ChromeOS, and press *Connect to camera*. It shows photos taken,
+photos left, battery, camera and the current look and mode, and lets you change the look,
+switch between single shot and time-lapse, take a photo, and start or stop a time-lapse.
+iPhone browsers don't support Web Bluetooth. On Linux, Chrome needs
+`--enable-experimental-web-platform-features`.
+
+While a time-lapse runs, only *Stop* works: changing the look or mode, or taking a photo,
+is refused so a stray tap can't spoil the run.
+
+**nRF Connect** (or any BLE tool). One service, `c4a30000-7b6e-4f0a-9d2e-5a1c8e3f6b20`,
+with three characteristics, plus the standard Battery Service:
+
+| Characteristic | UUID | |
+|---|---|---|
+| Status JSON | `c4a30001-…` | read / notify: `photos`, `left`, `battery`, `usb`, `camera`, `look`, `lookName`, `mode`, `interval`, `intervalName`, `running`, `frames`, `elapsed`, `folder`, `card`, `busy`, `last`, `error` |
+| Command | `c4a30002-…` | write text: `look <0-11>`, `mode single`, `mode lapse [0-4]`, `interval <0-4>`, `shoot`, `lapse start`, `lapse stop` |
+| Info JSON | `c4a30003-…` | read: firmware version, look names, interval names |
+
+A rejected command shows its reason in Status (`"error":"bad look"`, `"time-lapse running"`).
+
+<br clear="right">
+
 ## 🔬 How it works
 
 ```mermaid
@@ -210,6 +241,7 @@ the board:
 | Format card | ⚠️ no: built, but never run on a card |
 | Reading photos in a PC card reader | ⚠️ no: files were checked over USB serial instead |
 | Time-lapse at 10 s and 30 s (frames, sensor sleep between frames, stop) | ✅ yes |
+| Bluetooth remote: every command over BLE from a PC (17 checks), and the web page in Chrome (14 checks) | ✅ yes |
 
 Board test results are in [`docs/acceptance-2026-11-06.md`](docs/acceptance-2026-11-06.md).
 
@@ -274,6 +306,8 @@ ctest --test-dir tests/host/build --output-on-failure
 | `tools/run.sh [s]` | Builds, flashes, and prints `s` seconds of the serial log. |
 | `tools/serlog.py [s]` | Reads the serial console without resetting the board. |
 | `tools/dumpfiles.py log dir` | Rebuilds files sent over serial as `FILE …` / `ENDFILE` blocks, so you can pull photos off without touching the card. |
+| `tools/ble_test.py` | Runs every Bluetooth command against the camera from a PC (needs `bleak`). |
+| `tools/web_test.py` | Drives the web page in Chrome against the camera through Chrome DevTools. |
 | `tools/dump2png.py log dir` | Turns RGB565 `DUMP` blocks from the log into PNGs. |
 
 ## 📁 Project layout
@@ -287,12 +321,13 @@ components/
   looks/      the 12 looks: pure C, strip-safe, host-tested
   camera/     sensor detection, viewfinder, full-res capture, rotation, AF
   pipeline/   capture → look → JPEG → card
+  remote/     Bluetooth LE service (NimBLE) + host-tested command/status protocol
 main/
   ui/         camera, gallery, settings screens; menus and toasts
   power.c     dim / screen-off / wake
   settings.c  brightness, look, level (NVS)
 tests/host/   Unity tests that run on the PC
-docs/         design, plan, acceptance results, decisions, reference PDFs
+docs/         web remote (index.html, app.js), design, plans, acceptance, decisions, reference PDFs
 ```
 
 ## 🗺️ Roadmap
