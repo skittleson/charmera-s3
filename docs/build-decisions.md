@@ -47,7 +47,9 @@ Every call made on the owner's behalf during the build, in order, from the build
 - Ruling: missed slots (save longer than the interval) are skipped, not caught up; the next frame starts at once.
 - Ruling: keeps shooting while the screen dims or sleeps, and while a dialog is open. Intervals >= 30 s power the sensor down between frames (heat); the last frame stays on screen.
 - Ruling: stops on No card / Card full / write failure, or after 3 consecutive capture failures, with a toast giving the frame count and folder.
-- Not yet run on the board.
+- On the board: a 10 s run saved 10 frames to 101LAPSE on schedule (saves 3-6 s, screen dimmed mid-run); a 30 s run saved 3 frames to 102LAPSE with the sensor off between frames; stop confirmed by the owner.
+- Fixed: with the sensor asleep between frames the viewfinder loop spun without yielding and tripped the task watchdog every 5 s (the run itself kept working). It now waits 20 ms per loop; built and flashed, but not re-run on the board (owner skipped).
+- Dev note: opening the serial log (tools/serlog.py) restarts the board, which ends a running time-lapse; its frames already on the card are kept.
 
 ## Deferred minor issues (from the final review)
 

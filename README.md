@@ -209,7 +209,7 @@ the board:
 | OV2640 after the dual-camera rework | ⚠️ no: worked before the rework, not re-checked since |
 | Format card | ⚠️ no: built, but never run on a card |
 | Reading photos in a PC card reader | ⚠️ no: files were checked over USB serial instead |
-| Time-lapse | ⚠️ no: built and host-tested, not yet run on the board |
+| Time-lapse at 10 s and 30 s (frames, sensor sleep between frames, stop) | ✅ yes |
 
 Board test results are in [`docs/acceptance-2026-11-06.md`](docs/acceptance-2026-11-06.md).
 

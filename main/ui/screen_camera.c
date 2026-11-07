@@ -235,6 +235,7 @@ static void level_step(void)
 static void viewfinder_step(void)
 {
     if (s.busy || s.frozen) {
+        vTaskDelay(pdMS_TO_TICKS(20)); /* nothing to grab: don't spin the UI task */
         return;
     }
     uint16_t *f = camera_preview_frame();
