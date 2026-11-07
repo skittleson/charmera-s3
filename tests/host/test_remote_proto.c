@@ -1,0 +1,162 @@
+#include <string.h>
+
+#include "remote_proto.h"
+#include "unity.h"
+
+void setUp(void) {}
+void tearDown(void) {}
+
+#define LOOKS     12
+#define INTERVALS 5
+
+static remote_cmd_t parse_ok(const char *text)
+{
+    remote_cmd_t c = {.kind = RC_SHOOT, .arg = 99};
+    const char *err = remote_parse(text, strlen(text), LOOKS, INTERVALS, &c);
+    TEST_ASSERT_NULL_MESSAGE(err, text);
+    return c;
+}
+
+static const char *parse_err(const char *text)
+{
+    remote_cmd_t c;
+    return remote_parse(text, strlen(text), LOOKS, INTERVALS, &c);
+}
+
+static void test_parse_each_command(void)
+{
+    remote_cmd_t c = parse_ok("look 3");
+    TEST_ASSERT_EQUAL(RC_LOOK, c.kind);
+    TEST_ASSERT_EQUAL(3, c.arg);
+    TEST_ASSERT_EQUAL(RC_MODE_SINGLE, parse_ok("mode single").kind);
+    c = parse_ok("mode lapse");
+    TEST_ASSERT_EQUAL(RC_MODE_LAPSE, c.kind);
+    TEST_ASSERT_EQUAL(-1, c.arg);
+    c = parse_ok("mode lapse 2");
+    TEST_ASSERT_EQUAL(RC_MODE_LAPSE, c.kind);
+    TEST_ASSERT_EQUAL(2, c.arg);
+    c = parse_ok("interval 4");
+    TEST_ASSERT_EQUAL(RC_INTERVAL, c.kind);
+    TEST_ASSERT_EQUAL(4, c.arg);
+    TEST_ASSERT_EQUAL(RC_SHOOT, parse_ok("shoot").kind);
+    TEST_ASSERT_EQUAL(RC_LAPSE_START, parse_ok("lapse start").kind);
+    TEST_ASSERT_EQUAL(RC_LAPSE_STOP, parse_ok("lapse stop").kind);
+}
+
+static void test_parse_tolerates_whitespace_and_case(void)
+{
+    remote_cmd_t c = parse_ok("  LOOK 3\r\n");
+    TEST_ASSERT_EQUAL(RC_LOOK, c.kind);
+    TEST_ASSERT_EQUAL(3, c.arg);
+    TEST_ASSERT_EQUAL(RC_SHOOT, parse_ok("Shoot\n").kind);
+    TEST_ASSERT_EQUAL(RC_LAPSE_STOP, parse_ok("lapse   stop").kind);
+    /* len is honoured: no NUL terminator needed */
+    const char raw[] = {'s', 'h', 'o', 'o', 't', 'X', 'Y'};
+    TEST_ASSERT_NULL(remote_parse(raw, 5, LOOKS, INTERVALS, &c));
+    TEST_ASSERT_EQUAL(RC_SHOOT, c.kind);
+}
+
+static void test_parse_rejects_bad_numbers(void)
+{
+    TEST_ASSERT_EQUAL_STRING("bad look", parse_err("look 12"));
+    TEST_ASSERT_EQUAL_STRING("bad look", parse_err("look -1"));
+    TEST_ASSERT_EQUAL_STRING("bad look", parse_err("look x"));
+    TEST_ASSERT_EQUAL_STRING("bad look", parse_err("look 3x"));
+    TEST_ASSERT_EQUAL_STRING("bad look", parse_err("look"));
+    TEST_ASSERT_EQUAL_STRING("bad interval", parse_err("interval 5"));
+    TEST_ASSERT_EQUAL_STRING("bad interval", parse_err("mode lapse 9"));
+    TEST_ASSERT_EQUAL_STRING("unknown command", parse_err("dance"));
+    TEST_ASSERT_EQUAL_STRING("unknown command", parse_err(""));
+    TEST_ASSERT_EQUAL_STRING("unknown command", parse_err("shoot now"));
+}
+
+static void test_check_refuses_changes_while_running(void)
+{
+    const remote_cmd_kind_t refused[] = {RC_LOOK, RC_MODE_SINGLE, RC_MODE_LAPSE, RC_INTERVAL, RC_SHOOT, RC_LAPSE_START};
+    for (size_t i = 0; i < sizeof(refused) / sizeof(refused[0]); i++) {
+        remote_cmd_t c = {refused[i], 1};
+        TEST_ASSERT_EQUAL_STRING("time-lapse running", remote_check(&c, true));
+        TEST_ASSERT_NULL(remote_check(&c, false));
+    }
+    remote_cmd_t stop = {RC_LAPSE_STOP, -1};
+    TEST_ASSERT_NULL(remote_check(&stop, true));
+    TEST_ASSERT_EQUAL_STRING("not running", remote_check(&stop, false));
+}
+
+static remote_status_t sample(void)
+{
+    remote_status_t s = {
+        .photos = 91, .left = 120, .battery_pct = 82, .usb = false, .camera = "OV5640",
+        .look = 3, .look_name = "Black & White", .lapse_mode = true, .interval = 1, .interval_name = "10 s",
+        .lapse_running = true, .frames = 12, .elapsed_s = 75, .card = REMOTE_CARD_OK, .busy = false,
+    };
+    strcpy(s.folder, "101LAPSE");
+    strcpy(s.last, "IMG_0093");
+    return s;
+}
+
+static void test_status_json_fields(void)
+{
+    remote_status_t s = sample();
+    char out[512];
+    const size_t n = remote_status_json(&s, out, sizeof(out));
+    TEST_ASSERT_TRUE(n > 0 && n < 400);
+    TEST_ASSERT_EQUAL(n, strlen(out));
+    TEST_ASSERT_EQUAL_CHAR('{', out[0]);
+    TEST_ASSERT_EQUAL_CHAR('}', out[n - 1]);
+    const char *want[] = {"\"photos\":91", "\"left\":120", "\"battery\":82", "\"usb\":false",
+                          "\"camera\":\"OV5640\"", "\"look\":3", "\"lookName\":\"Black & White\"",
+                          "\"mode\":\"lapse\"", "\"interval\":1", "\"intervalName\":\"10 s\"", "\"running\":true",
+                          "\"frames\":12", "\"elapsed\":75", "\"folder\":\"101LAPSE\"", "\"card\":\"ok\"",
+                          "\"busy\":false", "\"last\":\"IMG_0093\"", "\"error\":\"\""};
+    for (size_t i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, want[i]), want[i]);
+    }
+    s.lapse_mode = false;
+    s.card = REMOTE_CARD_FULL;
+    remote_status_json(&s, out, sizeof(out));
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"mode\":\"single\""));
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"card\":\"full\""));
+}
+
+static void test_status_json_escapes_quotes(void)
+{
+    remote_status_t s = sample();
+    s.look_name = "a\"b\\c";
+    char out[512];
+    TEST_ASSERT_TRUE(remote_status_json(&s, out, sizeof(out)) > 0);
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"lookName\":\"a\\\"b\\\\c\""));
+}
+
+static void test_status_json_too_small_buffer_returns_0(void)
+{
+    remote_status_t s = sample();
+    char out[40];
+    TEST_ASSERT_EQUAL(0, remote_status_json(&s, out, sizeof(out)));
+}
+
+static void test_info_json(void)
+{
+    const char *looks[] = {"Normal", "Cool Tone"};
+    const char *iv[] = {"5 s", "10 s"};
+    char out[256];
+    TEST_ASSERT_TRUE(remote_info_json("0.1.0", looks, 2, iv, 2, out, sizeof(out)) > 0);
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"version\":\"0.1.0\""));
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"looks\":[\"Normal\",\"Cool Tone\"]"));
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"intervals\":[\"5 s\",\"10 s\"]"));
+    TEST_ASSERT_EQUAL(0, remote_info_json("0.1.0", looks, 2, iv, 2, out, 20));
+}
+
+int main(void)
+{
+    UNITY_BEGIN();
+    RUN_TEST(test_parse_each_command);
+    RUN_TEST(test_parse_tolerates_whitespace_and_case);
+    RUN_TEST(test_parse_rejects_bad_numbers);
+    RUN_TEST(test_check_refuses_changes_while_running);
+    RUN_TEST(test_status_json_fields);
+    RUN_TEST(test_status_json_escapes_quotes);
+    RUN_TEST(test_status_json_too_small_buffer_returns_0);
+    RUN_TEST(test_info_json);
+    return UNITY_END();
+}
