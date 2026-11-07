@@ -6,6 +6,9 @@
   <meta name="theme-color" content="#101010">
   <title>Charmera-S3 remote</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 </head>
 <body>
   <main>
@@ -22,6 +25,7 @@
     <section id="connect-box">
       <button id="connect" class="primary">Connect to camera</button>
       <p id="conn-state" class="muted">Not connected</p>
+      <button id="install" hidden>⬇ Install app (works offline)</button>
     </section>
 
     <section id="panel" class="disabled">

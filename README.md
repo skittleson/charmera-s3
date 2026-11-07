@@ -183,6 +183,11 @@ switch between single shot and time-lapse, take a photo, and start or stop a tim
 iPhone browsers don't support Web Bluetooth. On Linux, Chrome needs
 `--enable-experimental-web-platform-features`.
 
+**Install it once, use it offline.** The page is an installable app (PWA). Press
+*Install app* on the page, or use Chrome's *Install* / *Add to Home screen*, and it gets its
+own icon and window. After the first visit it opens with no internet connection, so a phone
+only has to reach the site once. Bluetooth to the camera never needs the internet.
+
 While a time-lapse runs, only *Stop* works: changing the look or mode, or taking a photo,
 is refused so a stray tap can't spoil the run.
 
@@ -196,6 +201,8 @@ with three characteristics, plus the standard Battery Service:
 | Info JSON | `c4a30003-…` | read: firmware version, look names, interval names |
 
 A rejected command shows its reason in Status (`"error":"bad look"`, `"time-lapse running"`).
+Status is about 330 bytes. Notifications fit when the app negotiates a large MTU (Chrome and
+bleak do; in nRF Connect use *Request MTU* → 517), otherwise just read Status.
 
 <br clear="right">
 

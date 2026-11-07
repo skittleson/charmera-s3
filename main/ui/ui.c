@@ -77,6 +77,15 @@ bool ui_menu_is_open(void)
     return s_menu.box != NULL;
 }
 
+void ui_menu_dismiss(void)
+{
+    if (s_menu.box && display_lock(200)) {
+        lv_obj_delete(s_menu.box);
+        display_unlock();
+    }
+    memset(&s_menu, 0, sizeof(s_menu));
+}
+
 static void menu_paint(void)
 {
     for (int i = 0; i < s_menu.count; i++) {
@@ -227,6 +236,7 @@ void ui_show(ui_screen_id_t id)
 
 void ui_show_now(ui_screen_id_t id)
 {
+    s_pending = -1; /* this switch wins over one picked from a menu in the same pass */
     if (s_current != SCREENS[id]) {
         switch_to(id);
     }

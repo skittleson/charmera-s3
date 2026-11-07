@@ -56,6 +56,8 @@ void ui_menu_open(const char *title, const char *const *items, int count, int in
 /* Two-choice confirm with Cancel highlighted first. cb(1) = confirmed, cb(0) = cancelled. */
 void ui_confirm(const char *question, const char *action, ui_menu_cb cb);
 bool ui_menu_is_open(void);
+/* Close any open menu or confirm without calling its callback. UI task only. */
+void ui_menu_dismiss(void);
 
 /* Shared styling */
 #define UI_COLOR_BG     lv_color_hex(0x101010)

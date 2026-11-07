@@ -15,6 +15,7 @@ let device = null;
 let chars = {};
 let status = null;
 let sending = Promise.resolve(); // GATT allows one operation at a time
+let ready = false; // setup finished; controls may be used
 
 function setConnState(text) {
   $('conn-state').textContent = text;
@@ -26,7 +27,7 @@ function fill(select, names) {
 }
 
 function render() {
-  const connected = !!(device && device.gatt.connected);
+  const connected = !!(device && device.gatt.connected) && ready;
   $('panel').classList.toggle('disabled', !connected);
   $('connect').textContent = connected ? 'Disconnect' : (device ? 'Reconnect' : 'Connect to camera');
   if (!status) return;
@@ -81,6 +82,7 @@ function send(text) {
 }
 
 async function setup() {
+  ready = false;
   setConnState('Connecting…');
   const server = await device.gatt.connect();
   const svc = await server.getPrimaryService(SERVICE);
@@ -94,6 +96,7 @@ async function setup() {
   await chars.status.startNotifications();
   await readStatus();
   setConnState(`Connected to ${device.name || 'camera'} · firmware ${info.version}`);
+  ready = true;
   render();
 }
 
@@ -109,18 +112,44 @@ async function connect() {
         optionalServices: ['battery_service'],
       });
       device.addEventListener('gattserverdisconnected', () => {
+        ready = false;
         setConnState('Disconnected. Press Reconnect when the camera is on.');
         render();
       });
     }
-    await setup();
+    // Through the queue, so a notification's re-read can't overlap setup's own reads.
+    sending = sending.catch(() => {}).then(setup);
+    await sending;
   } catch (e) {
+    sending = Promise.resolve(); // don't let a failed setup poison later commands
     setConnState(e.name === 'NotFoundError' ? 'No camera chosen' : `Couldn't connect: ${e.message}`);
     render();
   }
 }
 
+// Installable, offline-capable app: the phone only needs the network once.
+function setupPwa() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch((e) => console.warn('service worker:', e));
+  }
+  let prompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    prompt = e;
+    $('install').hidden = false;
+  });
+  $('install').addEventListener('click', async () => {
+    if (!prompt) return;
+    prompt.prompt();
+    await prompt.userChoice;
+    prompt = null;
+    $('install').hidden = true;
+  });
+  window.addEventListener('appinstalled', () => { $('install').hidden = true; });
+}
+
 function init() {
+  setupPwa();
   if (!navigator.bluetooth) {
     $('unsupported').hidden = false;
     $('connect').disabled = true;

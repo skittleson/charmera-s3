@@ -58,6 +58,8 @@ Every call made on the owner's behalf during the build, in order, from the build
 - Ruling: Bluetooth on by default, Settings toggle; Off fully deinitialises NimBLE. NimBLE host memory is in PSRAM, but the controller still takes ~40 KB of internal RAM (free internal 95 -> 56 KB, largest block 54 -> 31 KB). Photos (sensor JPEG, re-encoded look) and time-lapse frames all saved while connected.
 - Ruling: Settings list now scrolls (5 rows no longer fit).
 - Board: tools/ble_test.py 17/17 from the PC (bleak); tools/web_test.py 14/14 in a headless Chrome with Web Bluetooth enabled. One earlier web_test run failed the look-dropdown check once (2/14 failed); three later runs passed 14/14 and it didn't reproduce.
+- Final review fixes: a remote command now closes any open on-camera menu first, and menu callbacks ignore picks made while a run is going (a remote `lapse start` with a menu open could otherwise drop the run); a failed nimble_port_stop still deinitialises; the page runs setup in the GATT queue and keeps the panel locked until setup finishes; `lapse start`/`shoot` check the card before changing mode; a remote command cancels a menu-picked screen switch from the same pass; the per-command log is debug level; stale errors are cleared when Bluetooth is turned off. Built and host-tested; not yet re-run on the board.
+- Owner request: the page is a PWA (manifest, service worker with stale-while-revalidate cache, icons, Install button). Headless Chrome: installable with no errors, 11 files cached, loads with the network off.
 - Known: the "photos left" estimate drifts after time-lapse runs because small frames lower the average photo size.
 
 ## Deferred minor issues (from the final review)

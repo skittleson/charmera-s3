@@ -471,7 +471,7 @@ static void on_stop_confirm(int yes)
 
 static void on_interval(int index)
 {
-    if (index < 0 || index >= LAPSE_INTERVAL_COUNT) {
+    if (index < 0 || index >= LAPSE_INTERVAL_COUNT || s.lapse.mode == LAPSE_RUNNING) {
         return;
     }
     settings_set_lapse_interval(index);
@@ -515,6 +515,9 @@ static void open_looks(void)
 
 static void on_menu(int index)
 {
+    if (s.lapse.mode == LAPSE_RUNNING) {
+        return; /* a run started (remotely) while the menu was open */
+    }
     switch (index) {
     case 0:
         s.lapse.mode = LAPSE_OFF; /* plain photos */
@@ -629,6 +632,12 @@ const char *ui_camera_remote(const remote_cmd_t *c)
         shoot(); /* one ordinary photo, whatever the mode */
         break;
     case RC_LAPSE_START:
+        if (storage_status() != STORAGE_OK) {
+            return "no card";
+        }
+        if (storage_photos_remaining_now() == 0) {
+            return "card full";
+        }
         if (s.lapse.mode == LAPSE_OFF) {
             on_interval(s.lapse.interval);
         }

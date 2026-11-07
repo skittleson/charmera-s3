@@ -41,8 +41,10 @@ static char s_info[INFO_MAX];
 static char s_error[32];
 static int s_looks = 1, s_intervals = 1;
 static bool s_running;
-static uint16_t s_conn = BLE_HS_CONN_HANDLE_NONE;
-static bool s_subscribed;
+/* Written by the host task, read by the UI task; a stale value only makes a
+   notify fail with ENOTCONN, which NimBLE handles (and frees the mbuf). */
+static volatile uint16_t s_conn = BLE_HS_CONN_HANDLE_NONE;
+static volatile bool s_subscribed;
 static uint16_t s_status_handle;
 static uint8_t s_addr_type;
 
@@ -75,7 +77,7 @@ static int command_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_c
     }
     remote_cmd_t c;
     const char *err = remote_parse(buf, len, s_looks, s_intervals, &c);
-    ESP_LOGI(TAG, "command \"%.*s\" -> %s", (int)len, buf, err ? err : "queued");
+    ESP_LOGD(TAG, "command \"%.*s\" -> %s", (int)len, buf, err ? err : "queued");
     xSemaphoreTake(s_lock, portMAX_DELAY);
     if (err) {
         strlcpy(s_error, err, sizeof(s_error));
@@ -259,12 +261,17 @@ void remote_stop(void)
         ble_gap_terminate(s_conn, BLE_ERR_REM_USER_CONN_TERM);
     }
     ble_gap_adv_stop();
-    if (nimble_port_stop() == 0) {
-        nimble_port_deinit();
+    const int rc = nimble_port_stop();
+    if (rc != 0) {
+        ESP_LOGE(TAG, "nimble_port_stop failed: %d", rc);
     }
+    nimble_port_deinit(); /* as the IDF examples do, even after a failed stop */
     s_conn = BLE_HS_CONN_HANDLE_NONE;
     s_subscribed = false;
     xQueueReset(s_queue);
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_error[0] = '\0';
+    xSemaphoreGive(s_lock);
     ESP_LOGI(TAG, "stopped");
 }
 

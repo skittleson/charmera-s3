@@ -50,6 +50,7 @@ void remote_bridge_set_enabled(bool on)
         }
     } else {
         remote_stop();
+        s_error[0] = '\0';
     }
     log_heap(on ? "with Bluetooth" : "after Bluetooth off");
 }
@@ -128,9 +129,12 @@ void remote_bridge_poll(void)
     remote_cmd_t c;
     if (remote_take_command(&c)) {
         ui_show_now(UI_SCREEN_CAMERA);
+        ui_menu_dismiss(); /* an open menu's callback could otherwise undo the command */
         ui_note_activity(); /* also wakes a sleeping screen */
         const char *err = ui_camera_remote(&c);
-        strlcpy(s_error, err ? err : "", sizeof(s_error));
+        if (err || !rejected[0]) {
+            strlcpy(s_error, err ? err : "", sizeof(s_error));
+        }
         s_cache.at = 0; /* counts may have changed */
         now_please = true;
     }
