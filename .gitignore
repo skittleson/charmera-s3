@@ -5,3 +5,4 @@ sdkconfig
 sdkconfig.old
 tests/host/build/
 .superpowers/
+__pycache__/

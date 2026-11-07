@@ -187,6 +187,9 @@ int exif_read_orientation(const uint8_t *jpeg, size_t len)
     if (seg > len) {
         seg = len;
     }
+    if (seg < 12 + 8) {
+        return 1; /* not even a TIFF header */
+    }
     const uint8_t *t = jpeg + 12;
     const size_t tlen = seg - 12;
     const bool be = t[0] == 'M' && t[1] == 'M';
@@ -197,11 +200,15 @@ int exif_read_orientation(const uint8_t *jpeg, size_t len)
 #define RD32(p) (be ? ((uint32_t)(p)[0] << 24 | (uint32_t)(p)[1] << 16 | (uint32_t)(p)[2] << 8 | (p)[3]) \
                     : ((uint32_t)(p)[3] << 24 | (uint32_t)(p)[2] << 16 | (uint32_t)(p)[1] << 8 | (p)[0]))
     const uint32_t ifd = RD32(t + 4);
-    if (ifd + 2 > tlen) {
+    if (tlen < 2 || ifd > tlen - 2) { /* no sums that could wrap */
         return 1;
     }
-    const uint32_t n = RD16(t + ifd);
-    for (uint32_t i = 0; i < n && ifd + 2 + 12 * (i + 1) <= tlen; i++) {
+    uint32_t n = RD16(t + ifd);
+    const uint32_t fits = (uint32_t)((tlen - ifd - 2) / 12);
+    if (n > fits) {
+        n = fits;
+    }
+    for (uint32_t i = 0; i < n; i++) {
         const uint8_t *e = t + ifd + 2 + 12 * i;
         if (RD16(e) == 0x0112 && RD16(e + 2) == T_SHORT) {
             const uint32_t v = RD16(e + 8);

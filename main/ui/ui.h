@@ -35,6 +35,10 @@ void ui_start(void);
 void ui_show(ui_screen_id_t id);
 /* Rebuild the current screen (after the orientation changed). Safe from event handlers. */
 void ui_relayout(void);
+/* True inside the leave()/enter() of such a rebuild: keep state, only redo widgets. */
+bool ui_is_relayout(void);
+/* True while a screen switch or rebuild is waiting to run. */
+bool ui_switch_pending(void);
 /* Switch at once if another screen is showing. UI task only. */
 void ui_show_now(ui_screen_id_t id);
 

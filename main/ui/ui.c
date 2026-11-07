@@ -21,6 +21,7 @@ static const ui_screen_t *const SCREENS[] = {
 
 static const ui_screen_t *s_current;
 static ui_screen_id_t s_current_id;
+static bool s_relayout_req, s_in_relayout;
 static volatile int s_pending = -1;
 
 /* ---------- toast ---------- */
@@ -241,12 +242,24 @@ void ui_relayout(void)
     if (s_menu.box) {
         ui_menu_dismiss(); /* sized for the old orientation */
     }
+    s_relayout_req = true;
     s_pending = s_current_id; /* switch_to runs even for the same screen */
+}
+
+bool ui_is_relayout(void)
+{
+    return s_in_relayout;
+}
+
+bool ui_switch_pending(void)
+{
+    return s_pending >= 0;
 }
 
 void ui_show_now(ui_screen_id_t id)
 {
     s_pending = -1; /* this switch wins over one picked from a menu in the same pass */
+    s_relayout_req = false;
     if (s_current != SCREENS[id]) {
         switch_to(id);
     }
@@ -285,7 +298,10 @@ static void ui_task(void *arg)
         if (s_pending >= 0) {
             const int id = s_pending;
             s_pending = -1;
+            s_in_relayout = s_relayout_req && id == (int)s_current_id;
+            s_relayout_req = false;
             switch_to((ui_screen_id_t)id);
+            s_in_relayout = false;
         }
         const int64_t now = esp_timer_get_time();
         if (now >= next_tick) {

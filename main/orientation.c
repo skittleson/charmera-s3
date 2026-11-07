@@ -43,6 +43,12 @@ void orientation_init(void)
     s_current = ORIENT_PORTRAIT;
     apply(start, false);
     orient_auto_init(&s_auto, s_current);
+    float down, side, face;
+    input_gravity(&down, &side, &face);
+    /* For checking the derived constants on the board: hold it portrait at boot and
+       down should be about +1 g (8192), side about 0. */
+    ESP_LOGI(TAG, "setting %s, start %s, gravity down %.0f side %.0f face %.0f", orient_name(setting),
+             orient_name(start), down, side, face);
 }
 
 orient_t orientation_current(void)

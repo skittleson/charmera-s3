@@ -103,7 +103,7 @@ static lv_display_rotation_t rotation_for(orient_t o)
 
 void display_set_orientation(orient_t o)
 {
-    if (!s_disp || !display_lock(500)) {
+    if (!s_disp || !display_lock(-1)) { /* wait: a skipped rotation would never be retried */
         return;
     }
     if (lv_display_get_rotation(s_disp) != rotation_for(o)) {

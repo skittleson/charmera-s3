@@ -148,7 +148,14 @@ void ui_camera_reserve(void)
 static void enter(lv_obj_t *scr)
 {
     ui_camera_reserve();
+    const bool turning = ui_is_relayout();
+    const __typeof__(s.lapse) keep_lapse = s.lapse;
+    const look_t keep_look = s.current;
     memset(&s, 0, sizeof(s));
+    if (turning) {
+        s.lapse = keep_lapse; /* a rebuild for the new orientation keeps the mode */
+        s.current = keep_look;
+    }
     s.current = settings_look();
     s.lapse.interval = settings_lapse_interval();
     camera_power(true);
@@ -210,6 +217,9 @@ static void lapse_stop(const char *why);
 
 static void leave(void)
 {
+    if (ui_is_relayout()) {
+        return; /* just turning: keep the mode, the armed time-lapse and the sensor on */
+    }
     if (s.lapse.mode == LAPSE_RUNNING) {
         lapse_stop(NULL);
     }
@@ -246,8 +256,8 @@ static void level_step(void)
 /* Called between input polls: grab a viewfinder frame and show it. */
 static void viewfinder_step(void)
 {
-    if (s.busy || s.frozen) {
-        vTaskDelay(pdMS_TO_TICKS(20)); /* nothing to grab: don't spin the UI task */
+    if (s.busy || s.frozen || ui_switch_pending()) {
+        vTaskDelay(pdMS_TO_TICKS(20)); /* nothing to grab (or about to rebuild): don't spin */
         return;
     }
     uint16_t *f = camera_preview_frame();

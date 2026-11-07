@@ -29,6 +29,12 @@
 #ifndef INPUT_GRAVITY_AXIS
 #define INPUT_GRAVITY_AXIS 0
 #endif
+/* Sign that makes `down` positive in the portrait grip (USB-C down). Used only for the
+   landscape level line; NOT yet checked on the board (if the landscape level turns the
+   wrong way, flip it). Auto and the portrait level use |down|. */
+#ifndef INPUT_DOWN_SIGN
+#define INPUT_DOWN_SIGN 1.0f
+#endif
 #ifndef INPUT_ROLL_SIGN
 #define INPUT_ROLL_SIGN 1.0f
 #endif
@@ -183,7 +189,7 @@ float input_roll_deg(void)
 void input_gravity(float *down, float *side, float *face)
 {
     const int16_t r[3] = {s_raw[0], s_raw[1], s_raw[2]};
-    *down = (float)r[INPUT_GRAVITY_AXIS];
+    *down = INPUT_DOWN_SIGN * (float)r[INPUT_GRAVITY_AXIS];
     *side = INPUT_ROLL_SIGN * (float)r[INPUT_ROLL_AXIS];
     *face = (float)r[3 - INPUT_ROLL_AXIS - INPUT_GRAVITY_AXIS];
 }

@@ -214,6 +214,22 @@ static void test_read_orientation_other_files(void)
     TEST_ASSERT_EQUAL(1, exif_read_orientation(NULL, 0));
 }
 
+static void test_read_orientation_malformed(void)
+{
+    /* APP1 length smaller than its own header. */
+    static const uint8_t tiny[] = {0xff, 0xd8, 0xff, 0xe1, 0x00, 0x02, 'E', 'x', 'i', 'f', 0, 0,
+                                   'M', 'M', 0, 0x2a, 0, 0, 0, 8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    TEST_ASSERT_EQUAL(1, exif_read_orientation(tiny, sizeof(tiny)));
+    /* IFD offset near 4 GB (would wrap a 32-bit bounds check). */
+    static const uint8_t wild[] = {0xff, 0xd8, 0xff, 0xe1, 0x00, 0x1e, 'E', 'x', 'i', 'f', 0, 0,
+                                   'M', 'M', 0, 0x2a, 0xff, 0xff, 0xff, 0xff, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    TEST_ASSERT_EQUAL(1, exif_read_orientation(wild, sizeof(wild)));
+    /* Entry count far beyond the segment. */
+    static const uint8_t many[] = {0xff, 0xd8, 0xff, 0xe1, 0x00, 0x1e, 'E', 'x', 'i', 'f', 0, 0,
+                                   'M', 'M', 0, 0x2a, 0, 0, 0, 8, 0xff, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    TEST_ASSERT_EQUAL(1, exif_read_orientation(many, sizeof(many)));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -225,5 +241,6 @@ int main(void)
     RUN_TEST(test_format_datetime);
     RUN_TEST(test_read_orientation_of_our_segment);
     RUN_TEST(test_read_orientation_other_files);
+    RUN_TEST(test_read_orientation_malformed);
     return UNITY_END();
 }

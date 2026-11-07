@@ -71,8 +71,7 @@ static void paint(void)
     lv_label_set_text(s.rows[ROW_BRIGHTNESS], t);
     lv_label_set_text(s.rows[ROW_LEVEL], settings_level() ? "Level  On" : "Level  Off");
     static const char *const ORIENT_LABELS[ORIENT_SETTING_COUNT] = {
-        "Orientation  Portrait", "Orientation  Landscape, USB-C right", "Orientation  Landscape, USB-C left",
-        "Orientation  Auto"};
+        "Orientation  Portrait", "Orientation  USB-C right", "Orientation  USB-C left", "Orientation  Auto"};
     lv_label_set_text(s.rows[ROW_ORIENTATION], ORIENT_LABELS[settings_orientation()]);
     lv_label_set_text(s.rows[ROW_BLUETOOTH], settings_bluetooth() ? "Bluetooth  On" : "Bluetooth  Off");
     lv_label_set_text(s.rows[ROW_FORMAT], storage_status() == STORAGE_OK ? "Format card" : "Format card (no card)");
