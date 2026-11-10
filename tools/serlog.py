@@ -1,6 +1,7 @@
 # Usage: python tools/serlog.py [seconds]  (run inside the ESP-IDF env for pyserial)
 import serial, sys, time
-# Read the console without touching DTR/RTS (so the chip is not reset).
+# DTR/RTS are left low, but opening the ESP32-S3's native USB-Serial/JTAG port still
+# restarts the chip (every log in practice starts at boot). It ends a running time-lapse.
 dur = float(sys.argv[1]) if len(sys.argv) > 1 else 6
 s = None
 for _ in range(50):

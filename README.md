@@ -367,7 +367,7 @@ ctest --test-dir tests/host/build --output-on-failure
 | Tool | What it does |
 |---|---|
 | `tools/run.sh [s]` | Builds, flashes, and prints `s` seconds of the serial log. |
-| `tools/serlog.py [s]` | Reads the serial console without resetting the board. |
+| `tools/serlog.py [s]` | Prints `s` seconds of the serial console. Opening the port restarts the board, so the log starts at boot. |
 | `tools/dumpfiles.py log dir` | Rebuilds files sent over serial as `FILE …` / `ENDFILE` blocks, so you can pull photos off without touching the card. |
 | `tools/ble_test.py` | Runs every Bluetooth command against the camera from a PC (needs `bleak`). |
 | `tools/web_test.py` | Drives the web page in Chrome against the camera through Chrome DevTools. |
