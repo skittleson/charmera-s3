@@ -112,10 +112,13 @@ async def main():
         await ev("$('looks').value='0'; $('looks').dispatchEvent(new Event('change'))")
         report("look back to Normal", await until("status.look === 0"))
 
+        report("single mode: shutter shown, no Start/Stop, no preview box hidden?",
+               await ev("!$('shutter-row').hidden && $('lapse-row').hidden"))
         await ev("$('mode-lapse').click()")
-        report("mode Time-lapse -> mode lapse", await until("status.mode === 'lapse' && $('mode-lapse').getAttribute('aria-checked') === 'true'"))
+        report("mode Time-lapse -> mode lapse, shutter gone, Start/Stop shown",
+               await until("status.mode === 'lapse' && $('shutter-row').hidden && !$('lapse-row').hidden"))
         await ev("$('mode-single').click()")
-        report("mode Single shot", await until("status.mode === 'single'"))
+        report("mode Single shot -> shutter back", await until("status.mode === 'single' && !$('shutter-row').hidden"))
 
         before = await ev("status ? status.photos : -1")
         if before is None or before < 0:
@@ -127,15 +130,19 @@ async def main():
         print("   ", await ev("$('last').textContent"))
         report("auto-preview thumbnail shown", await until("!$('preview').hidden && $('preview').src.startsWith('blob:')", 20))
 
+        await ev("$('mode-lapse').click()")
+        await until("status.mode === 'lapse'")
         await ev("$('interval').value='0'; $('interval').dispatchEvent(new Event('change'))")
         report("interval 5 s", await until("status.interval === 0"))
         await ev("$('lapse-start').click()")
-        report("Start -> running line shown, shutter locked, Stop enabled",
-               await until("status.running && !$('lapse-line').hidden && $('shoot').disabled && !$('lapse-stop').disabled"))
+        report("Start -> running line shown, Stop enabled",
+               await until("status.running && !$('lapse-line').hidden && !$('lapse-stop').disabled"))
         report("time-lapse 2 frames", await until("status.frames >= 2", 30))
         print("   ", await ev("$('lapse-line').textContent"))
         await ev("window.confirm = () => true; $('lapse-stop').click()")
-        report("Stop (confirmed) -> stopped, controls unlocked", await until("!status.running && !$('shoot').disabled", 20))
+        report("Stop (confirmed) -> stopped", await until("!status.running", 20))
+        await ev("$('mode-single').click()")
+        await until("status.mode === 'single'")
 
         # gallery: tab switch triggers list; rows appear (no thumbnails by design)
         await ev("$('tab-gallery').click()")

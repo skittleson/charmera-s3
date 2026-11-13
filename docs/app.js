@@ -18,6 +18,13 @@ let status = null;
 let sending = Promise.resolve(); // GATT allows one operation at a time
 let ready = false; // setup finished; controls may be used
 let info = null;
+let timeSyncTimer = null;
+
+function sendTimeSync() {
+  if (device && device.gatt.connected && chars.command) {
+    send(`time ${Math.floor(Date.now() / 1000)} ${-new Date().getTimezoneOffset()}`);
+  }
+}
 
 // ---------- tiny localStorage helpers ----------
 const store = {
@@ -101,7 +108,7 @@ function fetchFileNow(command, progress) {
 function render() {
   const connected = !!(device && device.gatt.connected) && ready;
   $('app').classList.toggle('disabled', !connected);
-  $('conn-chip').textContent = connected ? 'Connected — disconnect' : 'Not connected';
+  $('conn-chip').textContent = connected ? 'Connected' : 'Not connected';
   $('conn-chip').title = connected ? 'Tap to disconnect' : '';
   $('conn-chip').classList.toggle('on', connected);
   if (!status) return;
@@ -109,11 +116,15 @@ function render() {
   $('photos').textContent = s.photos;
   $('left').textContent = s.card === 'none' ? 'No card' : s.card === 'full' ? 'Full' : s.left;
   $('battery').textContent = s.usb ? 'Charging' : `${s.battery}%`;
-  $('camera').textContent = s.camera;
   $('interval').value = s.interval;
   if (s.orientationSetting) $('orientation').value = s.orientationSetting;
   $('mode-single').setAttribute('aria-checked', s.mode === 'single');
   $('mode-lapse').setAttribute('aria-checked', s.mode === 'lapse');
+  // One shutter vocabulary: single mode shows the shutter+preview, lapse shows Start/Stop.
+  $('shutter-row').hidden = s.mode !== 'single';
+  $('preview-box').hidden = s.mode !== 'single';
+  $('lapse-row').hidden = s.mode !== 'lapse';
+  $('interval').hidden = s.mode !== 'lapse';
   paintLooks();
 
   $('lapse-line').hidden = !s.running;
@@ -332,6 +343,10 @@ async function setup() {
   info.intervals.forEach((name, i) => $('interval').add(new Option(name, i)));
   const now = `time ${Math.floor(Date.now() / 1000)} ${-new Date().getTimezoneOffset()}`;
   await chars.command.writeValueWithResponse(enc.encode(now));
+  // Keep the camera's clock true while connected — it has no battery-backed RTC, and
+  // every photo's EXIF carries it. Re-sync every 5 minutes; the page may stay open for days.
+  clearInterval(timeSyncTimer);
+  timeSyncTimer = setInterval(() => sendTimeSync(), 5 * 60 * 1000);
   chars.status.addEventListener('characteristicvaluechanged', onStatus);
   await chars.status.startNotifications();
   chars.stream.addEventListener('characteristicvaluechanged', onStream);
@@ -354,8 +369,11 @@ async function connect() {
       });
       device.addEventListener('gattserverdisconnected', () => {
         ready = false;
+        clearInterval(timeSyncTimer);
         finishStream(new Error('disconnected'));
         render();
+        $('connect-overlay').hidden = false; // back to the big Connect screen
+        $('connect-hint').textContent = 'Disconnected — tap to reconnect';
       });
     }
     sending = sending.catch(() => {}).then(setup);

@@ -35,14 +35,15 @@ header { display: flex; align-items: center; gap: 8px; padding: 4px 0 10px; }
 .brand.big { font-size: 1.3rem; margin-right: 0; vertical-align: baseline; }
 .s3 { color: var(--accent); font-weight: 800; letter-spacing: 0.05em; }
 
-.chips { display: flex; gap: 6px; padding-bottom: 10px; }
+/* one compact status line: emoji + value, no overflow on phones */
+#status {
+  display: flex; gap: 14px; padding: 2px 2px 10px; font-size: 0.85rem; color: var(--dim);
+  font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden;
+}
+#status b { color: var(--fg); font-weight: 600; }
 .chip {
   background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
   padding: 4px 10px; font-size: 0.8rem; color: var(--dim); white-space: nowrap;
-}
-.chip b {
-  color: var(--fg); font-weight: 600; display: inline-block; min-width: 3.2em;
-  text-align: right; font-variant-numeric: tabular-nums; /* fixed width: values don't shove the row */
 }
 .chip.on { border-color: var(--ok); color: var(--ok); }
 button.chip { cursor: pointer; }

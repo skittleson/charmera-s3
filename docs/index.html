@@ -18,11 +18,10 @@
       <button id="install" class="chip ghost" hidden>⬇ Install</button>
     </header>
 
-    <div id="status" class="chips">
-      <span class="chip">📷 <b id="photos">–</b></span>
-      <span class="chip">💾 <b id="left">–</b></span>
-      <span class="chip">🔋 <b id="battery">–</b></span>
-      <span class="chip">🎥 <b id="camera">–</b></span>
+    <div id="status">
+      <span>📷 <b id="photos">–</b></span>
+      <span>💾 <b id="left">–</b></span>
+      <span>🔋 <b id="battery">–</b></span>
     </div>
 
     <p id="unsupported" class="notice" hidden>
@@ -55,7 +54,7 @@
         <select id="interval" aria-label="Interval"></select>
       </div>
 
-      <div class="row">
+      <div class="row" id="lapse-row" hidden>
         <button id="lapse-start">▶ Start</button>
         <button id="lapse-stop" class="danger" disabled>■ Stop</button>
       </div>
@@ -70,7 +69,7 @@
         <label class="toggle"><input type="checkbox" id="preview-toggle"> Preview after shot</label>
       </div>
 
-      <div class="shutter-row">
+      <div class="shutter-row" id="shutter-row">
         <button id="shoot" class="shutter" aria-label="Take a photo"><span></span></button>
       </div>
       <p id="last" class="muted"></p>
