@@ -1,11 +1,12 @@
 :root {
-  --bg: #0c0c0d;
-  --panel: #1a1a1c;
-  --line: #2c2c2f;
-  --fg: #f4f4f5;
-  --dim: #9a9aa0;
-  --accent: #ffc400;
-  --danger: #ff5a4a;
+  /* Kodak dark — palette from the Charmera 1987 design system: gold, red, cream, warm brown-black */
+  --bg: #141110;
+  --panel: #241f1b;
+  --line: #3a322b;
+  --fg: #faf3e6;
+  --dim: #a09384;
+  --accent: #fcc200;
+  --danger: #e05555;
   --ok: #37c871;
   color-scheme: dark;
 }
@@ -26,7 +27,13 @@ body {
 #app.disabled section, #app.disabled #tabs { opacity: 0.45; pointer-events: none; }
 
 header { display: flex; align-items: center; gap: 8px; padding: 4px 0 10px; }
-.brand { font-weight: 700; margin-right: auto; }
+/* KODAK-style signet: red box, white caps, tracked out */
+.brand {
+  margin-right: auto; font-weight: 800; letter-spacing: 0.12em; font-size: 0.95rem;
+  background: #e30613; color: #fff; padding: 3px 9px; border-radius: 4px;
+}
+.brand.big { font-size: 1.3rem; margin-right: 0; vertical-align: baseline; }
+.s3 { color: var(--accent); font-weight: 800; letter-spacing: 0.05em; }
 
 .chips { display: flex; gap: 6px; padding-bottom: 10px; }
 .chip {
@@ -115,7 +122,7 @@ button.ghost { background: transparent; }
 /* ---------- tabs ---------- */
 #tabs { display: flex; gap: 6px; margin-top: auto; padding: 10px 0; position: sticky; bottom: 0; background: var(--bg); }
 #tabs button { flex: 1; }
-#tabs button.active { background: var(--panel); color: var(--fg); font-weight: 600; border-color: #3a3a3e; }
+#tabs button.active { background: var(--panel); color: var(--fg); font-weight: 600; border-color: #55483c; }
 
 footer { padding: 4px 0 16px; text-align: center; }
 a { color: var(--dim); }
