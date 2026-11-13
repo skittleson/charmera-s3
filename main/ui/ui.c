@@ -31,7 +31,9 @@ static int64_t s_toast_until;
 
 void ui_toast(const char *text, int ms)
 {
-    const bool locked = display_lock(200);
+    /* Blocking lock: these helpers mutate LVGL state, so a failed lock must never
+       let the edit through (a dropped toast is fine; a torn widget tree is not). */
+    display_lock(-1);
     if (!s_toast) {
         s_toast = lv_label_create(lv_layer_top());
         lv_obj_set_style_bg_color(s_toast, lv_color_black(), 0);
@@ -46,9 +48,7 @@ void ui_toast(const char *text, int ms)
     lv_obj_set_hidden(s_toast, false);
     lv_obj_align(s_toast, LV_ALIGN_CENTER, 0, 0);
     s_toast_until = esp_timer_get_time() + (int64_t)ms * 1000;
-    if (locked) {
-        display_unlock();
-    }
+    display_unlock();
 }
 
 static void toast_tick(void)
@@ -81,11 +81,12 @@ bool ui_menu_is_open(void)
 
 void ui_menu_dismiss(void)
 {
-    if (s_menu.box && display_lock(200)) {
+    if (s_menu.box) {
+        display_lock(-1);
         lv_obj_delete(s_menu.box);
         display_unlock();
+        memset(&s_menu, 0, sizeof(s_menu));
     }
-    memset(&s_menu, 0, sizeof(s_menu));
 }
 
 static void menu_paint(void)
@@ -104,10 +105,9 @@ static void menu_close(int result)
 {
     ui_menu_cb cb = s_menu.cb;
     const bool confirm = s_menu.confirm;
-    if (display_lock(200)) {
-        lv_obj_delete(s_menu.box);
-        display_unlock();
-    }
+    display_lock(-1);
+    lv_obj_delete(s_menu.box);
+    display_unlock();
     memset(&s_menu, 0, sizeof(s_menu));
     if (cb) {
         cb(confirm ? (result == 1 ? 1 : 0) : result);
@@ -119,7 +119,8 @@ void ui_menu_open(const char *title, const char *const *items, int count, int in
     if (count > MENU_MAX) {
         count = MENU_MAX;
     }
-    const bool locked = display_lock(200);
+    /* Blocking lock: if we couldn't lock we must not delete or build widgets. */
+    display_lock(-1);
     if (s_menu.box) {
         lv_obj_delete(s_menu.box);
     }
@@ -162,9 +163,7 @@ void ui_menu_open(const char *title, const char *const *items, int count, int in
     s_menu.sel = (initial >= 0 && initial < count) ? initial : 0;
     s_menu.cb = cb;
     menu_paint();
-    if (locked) {
-        display_unlock();
-    }
+    display_unlock();
 }
 
 void ui_confirm(const char *question, const char *action, ui_menu_cb cb)

@@ -150,13 +150,11 @@ static void enter(lv_obj_t *scr)
     ui_camera_reserve();
     const bool turning = ui_is_relayout();
     const __typeof__(s.lapse) keep_lapse = s.lapse;
-    const look_t keep_look = s.current;
     memset(&s, 0, sizeof(s));
     if (turning) {
         s.lapse = keep_lapse; /* a rebuild for the new orientation keeps the mode */
-        s.current = keep_look;
     }
-    s.current = settings_look();
+    s.current = settings_look(); /* every look change is saved, so this survives a turn */
     s.lapse.interval = settings_lapse_interval();
     camera_power(true);
     camera_set_look(s.current);
@@ -242,10 +240,11 @@ static void level_step(void)
     const float rad = -deg * 3.14159265f / 180.0f;
     const float half = 70.0f, cx = display_width() / 2.0f, cy = display_height() / 2.0f;
     const float dx = half * cosf(rad), dy = half * sinf(rad);
-    s.level_pts[0] = (lv_point_precise_t){cx - dx, cy - dy};
-    s.level_pts[1] = (lv_point_precise_t){cx + dx, cy + dy};
     const bool flat = fabsf(deg) < 1.5f;
     if (display_lock(50)) {
+        /* Points are set under the lock: LVGL's flush task reads them during refresh. */
+        s.level_pts[0] = (lv_point_precise_t){cx - dx, cy - dy};
+        s.level_pts[1] = (lv_point_precise_t){cx + dx, cy + dy};
         lv_line_set_points(s.level, s.level_pts, 2);
         lv_obj_set_style_line_color(s.level, flat ? lv_color_hex(0x3ce05a) : UI_COLOR_FG, 0);
         lv_obj_set_style_line_opa(s.level, flat ? LV_OPA_COVER : LV_OPA_70, 0);
@@ -642,6 +641,10 @@ const char *ui_camera_remote(const remote_cmd_t *c)
         return err;
     }
     switch (c->kind) {
+    case RC_LIST: /* file service: handled by the bridge, never reaches here */
+    case RC_THUMB:
+    case RC_GET:
+        return NULL;
     case RC_LOOK:
         on_look(c->arg);
         break;
