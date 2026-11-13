@@ -101,13 +101,14 @@ function fetchFileNow(command, progress) {
 function render() {
   const connected = !!(device && device.gatt.connected) && ready;
   $('app').classList.toggle('disabled', !connected);
-  $('conn-chip').textContent = connected ? `Connected${info ? ' · v' + info.version : ''}` : 'Not connected';
+  $('conn-chip').textContent = connected ? 'Connected — disconnect' : 'Not connected';
+  $('conn-chip').title = connected ? 'Tap to disconnect' : '';
   $('conn-chip').classList.toggle('on', connected);
   if (!status) return;
   const s = status;
   $('photos').textContent = s.photos;
   $('left').textContent = s.card === 'none' ? 'No card' : s.card === 'full' ? 'Full' : s.left;
-  $('battery').textContent = s.usb ? 'USB' : `${s.battery}%`;
+  $('battery').textContent = s.usb ? 'Charging' : `${s.battery}%`;
   $('camera').textContent = s.camera;
   $('interval').value = s.interval;
   if (s.orientationSetting) $('orientation').value = s.orientationSetting;
@@ -156,24 +157,16 @@ function send(text) {
 // ---------- looks ----------
 
 function buildLooks() {
-  const row = $('looks');
-  row.innerHTML = '';
-  (info ? info.looks : []).forEach((name, i) => {
-    const b = document.createElement('button');
-    b.className = 'pill';
-    b.textContent = name;
-    b.setAttribute('role', 'option');
-    b.addEventListener('click', () => send(`look ${i}`));
-    row.appendChild(b);
-  });
+  const sel = $('looks');
+  sel.innerHTML = '';
+  (info ? info.looks : []).forEach((name, i) => sel.add(new Option(name, i)));
 }
 
 function paintLooks() {
   if (!status) return;
-  [...$('looks').children].forEach((b, i) => {
-    b.classList.toggle('sel', i === status.look);
-    b.disabled = status.running || status.busy;
-  });
+  const sel = $('looks');
+  if (+sel.value !== status.look) sel.value = status.look;
+  sel.disabled = status.running || status.busy;
 }
 
 // ---------- shoot + preview ----------
@@ -229,51 +222,55 @@ async function loadGallery() {
     gallery = JSON.parse(await blob.text());
     gallery.sort((a, b) => b[0] - a[0]); // newest first
     $('gallery-info').textContent = `${gallery.length} photos`;
-    buildGrid();
+    buildList();
   } catch (e) {
     $('gallery-info').textContent = `Failed: ${e.message}`;
   }
 }
 
-const thumbCache = new Map(); // photo number -> object URL, or null when it has no .THM
-let thumbObserver = null;
-
-function buildGrid() {
-  const grid = $('grid');
-  grid.innerHTML = '';
-  if (thumbObserver) thumbObserver.disconnect();
-  thumbObserver = new IntersectionObserver((entries) => {
-    for (const e of entries) {
-      if (!e.isIntersecting) continue;
-      thumbObserver.unobserve(e.target);
-      loadCellThumb(e.target);
-    }
-  }, { rootMargin: '200px' });
+/* A plain list: name, size, a download button. Loading 100+ thumbnails over Bluetooth
+   would take forever, so images only load in the viewer for the photo you picked. */
+function buildList() {
+  const list = $('photo-list');
+  list.innerHTML = '';
   for (const [n, size] of gallery) {
-    const cell = document.createElement('button');
-    cell.className = 'cell';
-    cell.dataset.n = n;
-    cell.title = `IMG_${String(n).padStart(4, '0')} (${Math.round(size / 1024)} kB)`;
-    cell.textContent = `IMG_${String(n).padStart(4, '0')}`;
-    cell.addEventListener('click', () => openViewer(n));
-    grid.appendChild(cell);
-    thumbObserver.observe(cell);
+    const row = document.createElement('div');
+    row.className = 'prow';
+    const name = document.createElement('button');
+    name.className = 'prow-open';
+    name.textContent = `IMG_${String(n).padStart(4, '0')}.jpg`;
+    name.addEventListener('click', () => openViewer(n));
+    const kb = document.createElement('span');
+    kb.className = 'prow-size';
+    kb.textContent = `${Math.round(size / 1024)} kB`;
+    const dl = document.createElement('button');
+    dl.className = 'prow-dl ghost';
+    dl.textContent = '⬇';
+    dl.title = 'Download full size';
+    dl.addEventListener('click', () => downloadRow(n, dl));
+    row.append(name, kb, dl);
+    list.appendChild(row);
   }
 }
 
-async function loadCellThumb(cell) {
-  const n = +cell.dataset.n;
-  if (!thumbCache.has(n)) {
-    try {
-      thumbCache.set(n, URL.createObjectURL(await fetchFile(`thumb ${n}`)));
-    } catch {
-      thumbCache.set(n, null); // older photo without a sidecar: keep the name
-    }
-  }
-  const url = thumbCache.get(n);
-  if (url && cell.isConnected) {
-    cell.style.backgroundImage = `url(${url})`;
-    cell.classList.add('has-thumb');
+/* Download straight from the list; the button shows progress and re-enables when done. */
+async function downloadRow(n, btn) {
+  btn.disabled = true;
+  try {
+    const blob = await fetchFile(`get ${n}`, (got, total) => {
+      btn.textContent = total ? `${Math.round((got / total) * 100)}%` : `${got} B`;
+    });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `IMG_${String(n).padStart(4, '0')}.jpg`;
+    a.click();
+    btn.textContent = '✓';
+    setTimeout(() => { btn.textContent = '⬇'; }, 1500);
+  } catch (e) {
+    btn.textContent = '✕';
+    setTimeout(() => { btn.textContent = '⬇'; }, 1500);
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -415,6 +412,8 @@ function init() {
   $('preview-toggle').checked = store.get('preview', true);
   $('preview-toggle').addEventListener('change', (e) => store.set('preview', e.target.checked));
   $('connect').addEventListener('click', connect);
+  $('conn-chip').addEventListener('click', () => { if (device && device.gatt.connected) connect(); });
+  $('looks').addEventListener('change', (e) => send(`look ${e.target.value}`));
   $('mode-single').addEventListener('click', () => send('mode single'));
   $('mode-lapse').addEventListener('click', () => send(`mode lapse ${$('interval').value || ''}`.trim()));
   $('interval').addEventListener('change', (e) => send(`interval ${e.target.value}`));

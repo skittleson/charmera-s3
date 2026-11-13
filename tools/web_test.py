@@ -104,12 +104,12 @@ async def main():
             print("    device connected:", await ev("!!(device && device.gatt.connected)"))
         print("    chip:", await ev("$('conn-chip').textContent"))
         print("    chips:", await ev("['photos','left','battery','camera'].map(i=>$(i).textContent).join(' | ')"))
-        report("look pills filled from Info (12)", await ev("$('looks').children.length") == 12)
+        report("look select filled from Info (12)", await ev("$('looks').options.length") == 12)
         report("interval list filled (5)", await ev("$('interval').options.length") == 5)
 
-        await ev("$('looks').children[2].click()")
-        report("look pill -> camera reports look 2", await until("status.look === 2"))
-        await ev("$('looks').children[0].click()")
+        await ev("$('looks').value='2'; $('looks').dispatchEvent(new Event('change'))")
+        report("look select -> camera reports look 2", await until("status.look === 2"))
+        await ev("$('looks').value='0'; $('looks').dispatchEvent(new Event('change'))")
         report("look back to Normal", await until("status.look === 0"))
 
         await ev("$('mode-lapse').click()")
@@ -137,20 +137,20 @@ async def main():
         await ev("window.confirm = () => true; $('lapse-stop').click()")
         report("Stop (confirmed) -> stopped, controls unlocked", await until("!status.running && !$('shoot').disabled", 20))
 
-        # gallery: tab switch triggers list; cells appear
+        # gallery: tab switch triggers list; rows appear (no thumbnails by design)
         await ev("$('tab-gallery').click()")
-        report("gallery lists card photos", await until("gallery.length > 0 && $('grid').children.length > 0", 25))
+        report("gallery lists card photos", await until("gallery.length > 0 && $('photo-list').children.length > 0", 25))
         print("    gallery-info:", await ev("$('gallery-info').textContent"))
-        print("    gallery:", await ev("gallery.length"), "photos, first cell", await ev("$('grid').firstChild.textContent"))
-        report("gallery cell opens viewer with thumbnail",
-               await ev("(async () => { $('grid').firstChild.click(); "
+        print("    gallery:", await ev("gallery.length"), "photos, first row", await ev("$('photo-list').firstChild.textContent"))
+        report("gallery row opens viewer with thumbnail",
+               await ev("(async () => { $('photo-list').firstChild.querySelector('.prow-open').click(); "
                         "await new Promise(r => setTimeout(r, 8000)); "
                         "return !$('viewer').hidden && !$('viewer-img').hidden; })()"))
 
         await ev("$('interval').value='1'; $('interval').dispatchEvent(new Event('change'))")
         await until("status.interval === 1")
-        await ev("device.gatt.disconnect()")
-        report("Disconnect -> controls disabled",
+        await ev("$('conn-chip').click()")
+        report("chip -> controls disabled",
                await until("$('app').classList.contains('disabled')"))
         print(f"\n{sum(log)}/{len(log)} passed")
         ok = all(log)

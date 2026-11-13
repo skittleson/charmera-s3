@@ -14,7 +14,7 @@
   <div id="app" class="disabled">
     <header>
       <span class="brand">📸 Charmera</span>
-      <span id="conn-chip" class="chip">Not connected</span>
+      <button id="conn-chip" class="chip" title="Tap to disconnect">Not connected</button>
       <button id="install" class="chip ghost" hidden>⬇ Install</button>
     </header>
 
@@ -43,7 +43,9 @@
         </div>
       </div>
 
-      <div id="looks" class="pill-row" role="listbox" aria-label="Look"></div>
+      <div class="row">
+        <select id="looks" aria-label="Look"></select>
+      </div>
 
       <div class="row">
         <div class="seg" role="radiogroup" aria-label="Mode">
@@ -51,8 +53,11 @@
           <button id="mode-lapse" role="radio">Time-lapse</button>
         </div>
         <select id="interval" aria-label="Interval"></select>
-        <button id="lapse-start">▶</button>
-        <button id="lapse-stop" class="danger" disabled>■</button>
+      </div>
+
+      <div class="row">
+        <button id="lapse-start">▶ Start</button>
+        <button id="lapse-stop" class="danger" disabled>■ Stop</button>
       </div>
 
       <div class="row compact">
@@ -77,7 +82,7 @@
         <button id="gallery-refresh" class="ghost">↻ Refresh</button>
         <span id="gallery-info" class="muted">Not loaded yet</span>
       </div>
-      <div id="grid"></div>
+      <div id="photo-list"></div>
     </section>
 
     <nav id="tabs">

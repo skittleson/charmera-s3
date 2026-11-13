@@ -47,7 +47,7 @@ Charmera's most common complaint: **you don't have to pick a mode every time you
 | 🔄 **Hold it any way** | Portrait, landscape either way round, or **Auto**, which turns the screen like a phone. Screen, viewfinder, frames, photos and gallery all follow. |
 | 👁️ **WYSIWYG viewfinder** | Live view and encoder share the same C code per look; host tests check they agree. |
 | ⏱️ **Time-lapse** | One photo every 5 s – 5 min, in its own card folder, ready to turn into video. Keeps shooting while the screen sleeps. |
-| 📶 **Bluetooth web app** | An installable phone app: shoot, see each shot right after, browse the card's thumbnails, download originals. |
+| 📶 **Bluetooth web app** | An installable phone app: shoot, see each shot right after, list the card and download originals. |
 | 🖼️ **Gallery** | On the camera and in the app. Newest first. Step back through shots, delete one or all on the camera. |
 | 🏷️ **Full EXIF** | Camera, date/time, orientation, size, look, time-lapse run and frame. |
 | 🔋 **Battery-friendly** | Dims after 30 s, off after 3 min; the sensor only runs while the viewfinder shows. |
@@ -201,7 +201,7 @@ At 24 fps, a 10 s interval turns 1 hour into 15 seconds of video.
 
 ## 📶 Bluetooth remote
 
-<img src="docs/images/remote.png" alt="The web app on a phone: the camera view with the preview of the shot just taken, look pills, time-lapse controls and the shutter; and the gallery view, a grid of thumbnails streamed from the card" width="400" align="right">
+<img src="docs/images/remote.png" alt="The web app on a phone: the camera view with the preview of the shot just taken, the look dropdown, time-lapse controls and the shutter; and the gallery view, a list of the card's photos with size and a download button" width="400" align="right">
 
 The camera advertises over Bluetooth LE as **Charmera-S3**. On by default; turn it off in
 Settings to save memory and battery.
@@ -214,9 +214,10 @@ the camera, not a status page:
   stop a run, change orientation. Battery, photo count and space left sit in the top bar.
 - **See what you shot.** With *Preview after shot* on (the default; the switch is remembered),
   the shot appears on the page about a second after the camera says *Saved*.
-- **Gallery.** Every photo on the card, newest first, with thumbnails that load as you scroll.
-  Tap one to view it, then **⬇ Full-size** to save the original JPEG (EXIF included) to your
-  phone or PC, without pulling the card.
+- **Gallery.** Every photo on the card, newest first, as a light list of names and sizes — no
+  thumbnails to wait for. Tap a name to preview it, or hit **⬇** on its row (or **⬇ Full-size**
+  in the viewer) to save the original JPEG (EXIF included) to your phone or PC without pulling
+  the card.
 
 iPhone browsers don't support Web Bluetooth. On Linux, Chrome needs
 `--enable-experimental-web-platform-features`.
@@ -227,11 +228,11 @@ internet; Bluetooth to the camera never needs the network.
 
 > [!NOTE]
 > **Previews are fast, originals take a while.** Each new photo also gets a small 144 × 192
-> thumbnail (`IMG_xxxx.THM`, about 5 KB) beside it on the card, so previews and the gallery
-> arrive in a second or two. A full 5 MP original goes over Bluetooth at roughly **5–8 kB/s**,
-> so a Normal-look photo (about 0.5–0.8 MB) takes a minute or two. For a whole card, a card
-> reader is still faster. Photos taken before this firmware have no thumbnail; they show
-> their name in the gallery and still download full-size.
+> thumbnail (`IMG_xxxx.THM`, about 5 KB) beside it on the card, so the after-shot preview and
+> the viewer image arrive in a second or two. A full 5 MP original goes over Bluetooth at
+> roughly **5–8 kB/s**, so a Normal-look photo (about 0.5–0.8 MB) takes a minute or two. For a
+> whole card, a card reader is still faster. Photos taken before this firmware have no
+> thumbnail; the viewer has no image for them, but the row still downloads full-size.
 
 While a time-lapse runs, only *Stop* changes anything: looks, mode and the shutter are refused
 so a stray tap can't spoil the run. Browsing and downloading still work.
