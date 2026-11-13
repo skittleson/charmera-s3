@@ -120,6 +120,20 @@ const char *remote_parse(const char *text, size_t len, int look_count, int inter
             return NULL;
         }
     }
+    if (strcmp(w[0], "list") == 0 && n == 1) {
+        out->kind = RC_LIST;
+        return NULL;
+    }
+    if ((strcmp(w[0], "thumb") == 0 || strcmp(w[0], "get") == 0) && n == 2) {
+        char *end;
+        const long v = strtol(w[1], &end, 10);
+        if (*end || v < 1 || v > 9999) {
+            return "bad photo number";
+        }
+        out->kind = w[0][0] == 't' ? RC_THUMB : RC_GET;
+        out->arg = (int)v;
+        return NULL;
+    }
     return "unknown command";
 }
 

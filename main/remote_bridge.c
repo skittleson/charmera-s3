@@ -39,6 +39,137 @@ static void log_heap(const char *when)
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 }
 
+/* ---- file service: list / thumb / get (streamed over BLE) ---- */
+
+typedef struct {
+    FILE *f;
+} file_reader_t;
+
+static int file_reader(uint8_t *buf, int max, void *ctx)
+{
+    file_reader_t *r = (file_reader_t *)ctx;
+    board_spi_lock();
+    const size_t n = r->f ? fread(buf, 1, (size_t)max, r->f) : 0;
+    board_spi_unlock();
+    return n > 0 ? (int)n : 0;
+}
+
+static void file_done(void *ctx)
+{
+    file_reader_t *r = (file_reader_t *)ctx;
+    if (r->f) {
+        board_spi_lock();
+        fclose(r->f);
+        board_spi_unlock();
+    }
+    free(r);
+}
+
+typedef struct {
+    char *buf;
+    size_t len, pos;
+} mem_reader_t;
+
+static int mem_reader(uint8_t *out, int max, void *ctx)
+{
+    mem_reader_t *r = (mem_reader_t *)ctx;
+    const size_t left = r->len - r->pos;
+    const size_t n = left < (size_t)max ? left : (size_t)max;
+    memcpy(out, r->buf + r->pos, n);
+    r->pos += n;
+    return (int)n;
+}
+
+static void mem_done(void *ctx)
+{
+    mem_reader_t *r = (mem_reader_t *)ctx;
+    free(r->buf);
+    free(r);
+}
+
+/* Photo number -> JPEG path; sidecar when thumb. */
+static bool photo_path(int number, bool thumb, char *out, size_t len)
+{
+    if (thumb) {
+        return storage_thumb_path(number, out, len) == ESP_OK;
+    }
+    return storage_photo_path(number, out, len) == ESP_OK;
+}
+
+static const char *stream_photo(int number, bool thumb)
+{
+    char path[64];
+    if (!photo_path(number, thumb, path, sizeof(path)) || storage_status() != STORAGE_OK) {
+        return "no photo";
+    }
+    file_reader_t *r = malloc(sizeof(file_reader_t));
+    if (!r) {
+        return "no memory";
+    }
+    board_spi_lock();
+    r->f = fopen(path, "rb");
+    board_spi_unlock();
+    if (!r->f) {
+        free(r);
+        return thumb ? "no preview" : "no photo";
+    }
+    size_t size = 0;
+    storage_file_size(path, &size);
+    char meta[96];
+    snprintf(meta, sizeof(meta), "{\"kind\":\"%s\",\"n\":%d,\"size\":%u}", thumb ? "thumb" : "get",
+             number, (unsigned)size);
+    if (!remote_stream_file(meta, file_reader, file_done, r)) {
+        file_done(r);
+        return remote_stream_is_subscribed() ? "stream busy" : "enable stream notifications";
+    }
+    return NULL;
+}
+
+static const char *stream_list(void)
+{
+    int *nums;
+    size_t n;
+    if (storage_status() != STORAGE_OK || storage_list_photos(&nums, &n) != ESP_OK) {
+        return "no card";
+    }
+    /* [[102,12345],[103,...]] — 19 bytes per photo worst case (incl. NUL). */
+    char *json = heap_caps_malloc(n * 19 + 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!json) {
+        free(nums);
+        return "no memory";
+    }
+    size_t used = 0;
+    size_t entries = 0;
+    json[used++] = '[';
+    for (size_t i = 0; i < n; i++) {
+        char path[64];
+        size_t size = 0;
+        storage_photo_path(nums[i], path, sizeof(path));
+        if (storage_file_size(path, &size)) {
+            used += snprintf(json + used, 20, "%s[%d,%u]", entries ? "," : "", nums[i], (unsigned)size);
+            entries++;
+        }
+    }
+    json[used++] = ']';
+    free(nums);
+    mem_reader_t *r = malloc(sizeof(mem_reader_t));
+    if (!r) {
+        free(json);
+        return "no memory";
+    }
+    r->buf = json;
+    r->len = used;
+    r->pos = 0;
+    char meta[64];
+    snprintf(meta, sizeof(meta), "{\"kind\":\"list\",\"count\":%u,\"bytes\":%u}", (unsigned)n,
+             (unsigned)used);
+    if (!remote_stream_file(meta, mem_reader, mem_done, r)) {
+        mem_done(r);
+        return remote_stream_is_subscribed() ? "stream busy" : "enable stream notifications";
+    }
+    return NULL;
+}
+
 void remote_bridge_set_enabled(bool on)
 {
     if (on == remote_is_running()) {
@@ -133,6 +264,16 @@ void remote_bridge_poll(void)
     if (got && c.kind == RC_TIME) {
         pipeline_set_clock(c.epoch, c.offset_min); /* no screen switch, no wake-up */
         if (!rejected[0]) {
+            s_error[0] = '\0';
+        }
+        now_please = true;
+    } else if (got && (c.kind == RC_LIST || c.kind == RC_THUMB || c.kind == RC_GET)) {
+        /* File service: no screen switch, no wake — the page drives these. */
+        const char *err = c.kind == RC_LIST ? stream_list() : stream_photo(c.arg, c.kind == RC_THUMB);
+        if (err) {
+            remote_stream_error(err);
+            strlcpy(s_error, err, sizeof(s_error));
+        } else if (!rejected[0]) {
             s_error[0] = '\0';
         }
         now_please = true;

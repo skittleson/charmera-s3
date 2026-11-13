@@ -97,6 +97,23 @@ static void test_parse_orientation(void)
     TEST_ASSERT_EQUAL_STRING("bad orientation", parse_err("orientation"));
 }
 
+static void test_parse_file_service(void)
+{
+    remote_cmd_t c = parse_ok("list");
+    TEST_ASSERT_EQUAL(RC_LIST, c.kind);
+    c = parse_ok("thumb 7");
+    TEST_ASSERT_EQUAL(RC_THUMB, c.kind);
+    TEST_ASSERT_EQUAL(7, c.arg);
+    c = parse_ok("get 1234");
+    TEST_ASSERT_EQUAL(RC_GET, c.kind);
+    TEST_ASSERT_EQUAL(1234, c.arg);
+    TEST_ASSERT_EQUAL_STRING("bad photo number", parse_err("thumb 0"));
+    TEST_ASSERT_EQUAL_STRING("bad photo number", parse_err("get 10000"));
+    TEST_ASSERT_EQUAL_STRING("bad photo number", parse_err("thumb x"));
+    TEST_ASSERT_EQUAL_STRING("unknown command", parse_err("list extra"));
+    TEST_ASSERT_EQUAL_STRING("unknown command", parse_err("thumb"));
+}
+
 static void test_check_refuses_changes_while_running(void)
 {
     const remote_cmd_kind_t refused[] = {RC_LOOK,  RC_MODE_SINGLE, RC_MODE_LAPSE,
@@ -187,6 +204,7 @@ int main(void)
     RUN_TEST(test_parse_rejects_bad_numbers);
     RUN_TEST(test_parse_time);
     RUN_TEST(test_parse_orientation);
+    RUN_TEST(test_parse_file_service);
     RUN_TEST(test_check_refuses_changes_while_running);
     RUN_TEST(test_status_json_fields);
     RUN_TEST(test_status_json_escapes_quotes);

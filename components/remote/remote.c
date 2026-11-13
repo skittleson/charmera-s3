@@ -1,11 +1,15 @@
 #include "remote.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
+#include "freertos/idf_additions.h"
+#include "esp_heap_caps.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
@@ -31,6 +35,7 @@ static const ble_uuid128_t SVC_UUID = UUID_C4A3(0x00);
 static const ble_uuid128_t STATUS_UUID = UUID_C4A3(0x01);
 static const ble_uuid128_t COMMAND_UUID = UUID_C4A3(0x02);
 static const ble_uuid128_t INFO_UUID = UUID_C4A3(0x03);
+static const ble_uuid128_t STREAM_UUID = UUID_C4A3(0x04);
 static const ble_uuid16_t USER_DESC_UUID = BLE_UUID16_INIT(0x2901);
 
 static SemaphoreHandle_t s_lock;
@@ -46,6 +51,9 @@ static bool s_running;
 static volatile uint16_t s_conn = BLE_HS_CONN_HANDLE_NONE;
 static volatile bool s_subscribed;
 static uint16_t s_status_handle;
+static uint16_t s_stream_handle;
+static volatile bool s_stream_subscribed;
+static volatile bool s_stream_abort;
 static uint8_t s_addr_type;
 
 static void advertise(void);
@@ -66,6 +74,11 @@ static int status_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ct
 static int info_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
     return append(ctxt, s_info, strlen(s_info));
+}
+
+static int empty_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    return 0; /* stream data only flows as notifications */
 }
 
 static int command_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
@@ -120,6 +133,11 @@ static const struct ble_gatt_svc_def SERVICES[] = {
                  .access_cb = info_access,
                  .flags = BLE_GATT_CHR_F_READ,
                  .descriptors = USER_DESC("Info JSON")},
+                {.uuid = &STREAM_UUID.u,
+                 .access_cb = empty_access,
+                 .flags = BLE_GATT_CHR_F_NOTIFY,
+                 .val_handle = &s_stream_handle,
+                 .descriptors = USER_DESC("Stream: [u8 kind 0=meta 1=data 2=end] + payload")},
                 {0},
             },
     },
@@ -141,6 +159,8 @@ static int gap_event(struct ble_gap_event *ev, void *arg)
         ESP_LOGI(TAG, "disconnected (reason 0x%x)", ev->disconnect.reason);
         s_conn = BLE_HS_CONN_HANDLE_NONE;
         s_subscribed = false;
+        s_stream_subscribed = false;
+        s_stream_abort = true;
         advertise();
         break;
     case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -149,6 +169,8 @@ static int gap_event(struct ble_gap_event *ev, void *arg)
     case BLE_GAP_EVENT_SUBSCRIBE:
         if (ev->subscribe.attr_handle == s_status_handle) {
             s_subscribed = ev->subscribe.cur_notify;
+        } else if (ev->subscribe.attr_handle == s_stream_handle) {
+            s_stream_subscribed = ev->subscribe.cur_notify;
         }
         break;
     case BLE_GAP_EVENT_MTU:
@@ -331,3 +353,141 @@ void remote_publish(const char *status_json, int battery_pct)
         }
     }
 }
+
+/* ---------------- file streaming ----------------
+   A short-lived task sends a file as framed notifications on the STREAM
+   characteristic: [u8 kind][payload], kind 0 = meta JSON, 1 = data, 2 = end
+   (payload = u32 total). A task (not the caller's loop) because SD reads and
+   BLE backpressure must never stall the UI task. One stream at a time. */
+
+#define STREAM_CHUNK 480 /* payload per notification; trimmed to MTU at send */
+
+static TaskHandle_t s_stream_task;
+static volatile bool s_stream_busy;
+
+static bool notify_stream(const uint8_t *data, size_t len)
+{
+    if (s_stream_abort || s_conn == BLE_HS_CONN_HANDLE_NONE) {
+        return false;
+    }
+    int mtu = ble_att_mtu(s_conn);
+    const size_t cap = (mtu > 3 ? (size_t)(mtu - 3) : 20);
+    const uint8_t *p = data;
+    size_t left = len;
+    while (left) {
+        if (s_stream_abort || s_conn == BLE_HS_CONN_HANDLE_NONE || !s_stream_subscribed) {
+            return false;
+        }
+        const size_t n = left < cap ? left : cap;
+        struct os_mbuf *om = ble_hs_mbuf_from_flat(p, n);
+        if (!om) {
+            vTaskDelay(pdMS_TO_TICKS(10)); /* mbuf pool drained: let the host catch up */
+            continue;
+        }
+        const int rc = ble_gatts_notify_custom(s_conn, s_stream_handle, om); /* consumes om */
+        if (rc == BLE_HS_ENOMEM) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue; /* retry the same slice */
+        }
+        if (rc != 0) {
+            return false;
+        }
+        p += n;
+        left -= n;
+    }
+    return true;
+}
+
+typedef struct {
+    char meta[192]; /* copied: callers may build it on their stack */
+    remote_stream_reader_t read;
+    remote_stream_done_t done;
+    void *ctx;
+    uint8_t frame[1 + STREAM_CHUNK];
+} stream_job_t;
+
+static void stream_task(void *arg)
+{
+    stream_job_t *job = (stream_job_t *)arg;
+    uint8_t *frame = job->frame;
+    bool ok = true;
+    if (job->meta[0]) {
+        frame[0] = 0;
+        const size_t mlen = strlen(job->meta);
+        memcpy(frame + 1, job->meta, mlen);
+        ok = notify_stream(frame, 1 + mlen);
+    }
+    uint32_t total = 0;
+    while (ok) {
+        const int n = job->read(frame + 1, STREAM_CHUNK, job->ctx);
+        if (n <= 0) {
+            break;
+        }
+        frame[0] = 1;
+        ok = notify_stream(frame, 1 + (size_t)n);
+        total += (uint32_t)n;
+    }
+    if (ok) {
+        frame[0] = 2;
+        frame[1] = (uint8_t)(total >> 24);
+        frame[2] = (uint8_t)(total >> 16);
+        frame[3] = (uint8_t)(total >> 8);
+        frame[4] = (uint8_t)total;
+        notify_stream(frame, 5);
+    }
+    ESP_LOGI(TAG, "stream %s: %lu bytes%s", job->meta, (unsigned long)total, ok ? "" : " (aborted)");
+    if (job->done) {
+        job->done(job->ctx); /* frees ctx; job->meta is inline, not a borrowed pointer */
+    }
+    free(job);
+    s_stream_busy = false;
+    vTaskDeleteWithCaps(NULL);
+}
+
+bool remote_stream_is_busy(void)
+{
+    return s_stream_busy;
+}
+
+bool remote_stream_is_subscribed(void)
+{
+    return s_stream_subscribed;
+}
+
+void remote_stream_error(const char *msg)
+{
+    if (s_stream_busy || !remote_is_connected() || !s_stream_subscribed || !msg) {
+        return; /* the reason still reaches Status.error */
+    }
+    uint8_t frame[1 + 40];
+    const size_t n = strnlen(msg, sizeof(frame) - 1);
+    frame[0] = 3;
+    memcpy(frame + 1, msg, n);
+    s_stream_abort = false;
+    notify_stream(frame, 1 + n);
+}
+
+bool remote_stream_file(const char *meta_json, remote_stream_reader_t read, remote_stream_done_t done,
+                        void *ctx)
+{
+    if (s_stream_busy || !remote_is_connected() || !s_stream_subscribed) {
+        return false;
+    }
+    stream_job_t *job = heap_caps_malloc(sizeof(stream_job_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!job) {
+        return false;
+    }
+    strlcpy(job->meta, meta_json ? meta_json : "", sizeof(job->meta));
+    job->read = read;
+    job->done = done;
+    job->ctx = ctx;
+    s_stream_busy = true;
+    s_stream_abort = false;
+    if (xTaskCreateWithCaps(stream_task, "stream", 4096, job, 4, &s_stream_task, MALLOC_CAP_SPIRAM) != pdPASS) {
+        free(job);
+        s_stream_busy = false;
+        return false;
+    }
+    return true;
+}
+

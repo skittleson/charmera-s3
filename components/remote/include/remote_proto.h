@@ -17,6 +17,9 @@ typedef enum {
     RC_LAPSE_STOP,  /* lapse stop */
     RC_TIME,        /* time <unix seconds> [utc offset minutes] */
     RC_ORIENTATION, /* orientation <portrait|landscape-right|landscape-left|auto> -> arg 0..3 */
+    RC_LIST,        /* list -> photo numbers and sizes as JSON (via Status) */
+    RC_THUMB,       /* thumb <n> -> stream the .THM sidecar (arg = photo number) */
+    RC_GET,         /* get <n> -> stream the full JPEG (arg = photo number) */
 } remote_cmd_kind_t;
 
 typedef struct {
