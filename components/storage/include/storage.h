@@ -37,6 +37,14 @@ esp_err_t storage_delete_photo(int number);
 esp_err_t storage_delete_all_photos(void);
 esp_err_t storage_format(void);
 
+/* Sidecar thumbnail (120x160 JPEG, IMG_####.THM) written beside the photo. NULL when
+   unavailable. Paths for a photo's JPEG and THM; both return ESP_OK on success. */
+esp_err_t storage_thumb_path(int number, char *out, size_t len);
+bool storage_file_size(const char *path, size_t *out);
+/* Write the sidecar for `number` from jpeg data. Best effort: on failure the photo
+   still saves; the THM is simply absent. */
+void storage_thumb_write(int number, const uint8_t *jpeg, size_t len);
+
 uint32_t storage_photos_remaining_now(void);
 /* True when the card has photo numbers left (IMG_9999 not reached). */
 bool storage_numbers_left(void);

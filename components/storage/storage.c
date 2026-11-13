@@ -230,6 +230,60 @@ static void final_path(int number, char *out, size_t len)
     snprintf(out, len, "%s/%s", s_dir, name);
 }
 
+esp_err_t storage_thumb_path(int number, char *out, size_t len)
+{
+    char name[13];
+    storage_photo_name(number, name);
+    name[9] = 'T'; /* IMG_0001.JPG -> IMG_0001.THM */
+    name[10] = 'H';
+    name[11] = 'M';
+    const int n = snprintf(out, len, STORAGE_PHOTO_DIR "/%s", name);
+    return n > 0 && n < (int)len ? ESP_OK : ESP_ERR_INVALID_SIZE;
+}
+
+bool storage_file_size(const char *path, size_t *out)
+{
+    board_spi_lock();
+    FILE *f = fopen(path, "rb");
+    bool ok = false;
+    if (f) {
+        ok = fseek(f, 0, SEEK_END) == 0;
+        if (ok) {
+            *out = (size_t)ftell(f);
+        }
+        fclose(f);
+    }
+    board_spi_unlock();
+    return ok;
+}
+
+/* Best effort: the photo saves even if the sidecar fails. */
+void storage_thumb_write(int number, const uint8_t *jpeg, size_t len)
+{
+    char path[64];
+    /* Gallery photos only: time-lapse frames never show in the gallery. */
+    if (s_lapse || storage_thumb_path(number, path, sizeof(path)) != ESP_OK || storage_status() != STORAGE_OK) {
+        return;
+    }
+    char tmp[64];
+    /* 8.3 and ending in .TMP: the rescan at mount deletes it if power dies mid-write. */
+    snprintf(tmp, sizeof(tmp), STORAGE_PHOTO_DIR "/THM_%04d.TMP", number);
+    board_spi_lock();
+    FILE *f = fopen(tmp, "wb");
+    bool ok = f && fwrite(jpeg, 1, len, f) == len;
+    if (f) {
+        fflush(f);
+        fclose(f);
+    }
+    if (ok && rename(tmp, path) != 0) {
+        ok = false;
+    }
+    if (!ok) {
+        unlink(tmp);
+    }
+    board_spi_unlock();
+}
+
 static int current_number(void)
 {
     return s_lapse ? s_lapse_next : s_next_number;
@@ -312,6 +366,10 @@ esp_err_t storage_delete_photo(int number)
     storage_photo_path(number, path, sizeof(path));
     board_spi_lock();
     esp_err_t err = unlink(path) == 0 ? ESP_OK : ESP_FAIL;
+    char thm[64];
+    if (storage_thumb_path(number, thm, sizeof(thm)) == ESP_OK) {
+        unlink(thm); /* best effort: no sidecar is no error */
+    }
     if (err == ESP_OK && s_photo_count > 0) {
         s_photo_count--;
     }

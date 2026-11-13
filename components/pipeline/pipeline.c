@@ -27,6 +27,8 @@
 
 static const char *TAG = "pipeline";
 
+static void thumb_sidecar_reserve(void);
+
 static char s_software[32] = "charmera-s3";
 static char s_serial[13];
 static bool s_clock_set;
@@ -106,6 +108,7 @@ esp_err_t pipeline_init(const char *software)
     s_obuf = heap_caps_malloc(s_obuf_bytes, MALLOC_CAP_SPIRAM);
     s_thumb = jpeg_calloc_align(240 * 320 * 2, 16);
     s_chunk = heap_caps_malloc(WRITE_CHUNK, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    thumb_sidecar_reserve(); /* best effort: without it photos just have no .THM */
     if (!s_strip || !s_obuf || !s_thumb || !s_chunk || (camera_full_is_jpeg() && !s_dec_block) ||
         !look_reserve_rgb565(240, 320)) {
         ESP_LOGE(TAG, "buffer allocation failed");
@@ -292,6 +295,72 @@ done:
     return res;
 }
 
+/* Downscale an upright RGB565 thumbnail and encode a small JPEG for the .THM sidecar
+   (nearest-neighbour into a 16-multiple box, quality 60: good enough to review,
+   quick to send). Keeps the input's aspect: 240x320 -> 144x192, 320x240 -> 192x144. */
+#define THM_MAX_SIDE 192
+static uint8_t *s_thm_rgb; /* 16-byte aligned, the encoder's requirement; THM_MAX_SIDE^2 * 2 */
+/* PSRAM, not static: internal RAM is scarce, and the full-size encoder needs it for its task. */
+#define THM_JPG_CAP (THM_MAX_SIDE * THM_MAX_SIDE)
+static uint8_t *s_thm_jpg;
+
+static void thumb_sidecar_reserve(void)
+{
+    if (!s_thm_rgb) {
+        s_thm_rgb = heap_caps_aligned_alloc(16, THM_MAX_SIDE * THM_MAX_SIDE * 2, MALLOC_CAP_SPIRAM);
+    }
+    if (!s_thm_jpg) {
+        s_thm_jpg = heap_caps_malloc(THM_JPG_CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+}
+
+size_t pipeline_encode_thumb_jpeg(const uint16_t *rgb565, int w, int h, uint8_t *out, size_t cap)
+{
+    if (w <= 0 || h <= 0 || !rgb565) {
+        return 0;
+    }
+    int tw = w * THM_MAX_SIDE / (w > h ? w : h);
+    int th = h * THM_MAX_SIDE / (w > h ? w : h);
+    tw = tw < 16 ? 16 : tw & ~15;
+    th = th < 16 ? 16 : th & ~15;
+    if (!s_thm_rgb) {
+        return 0;
+    }
+    for (int y = 0; y < th; y++) {
+        const int sy = (int)((int64_t)y * h / th);
+        uint16_t *drow = (uint16_t *)(s_thm_rgb + (size_t)y * tw * 2);
+        for (int x = 0; x < tw; x++) {
+            drow[x] = rgb565[(size_t)sy * w + (int)((int64_t)x * w / tw)];
+        }
+    }
+    jpeg_enc_config_t cfg = DEFAULT_JPEG_ENC_CONFIG();
+    cfg.width = tw;
+    cfg.height = th;
+    cfg.src_type = JPEG_PIXEL_FORMAT_RGB565_LE;
+    cfg.subsampling = JPEG_SUBSAMPLE_420;
+    cfg.quality = 60;
+    jpeg_enc_handle_t enc = NULL;
+    if (jpeg_enc_open(&cfg, &enc) != JPEG_ERR_OK) {
+        return 0;
+    }
+    int len = 0;
+    const jpeg_error_t r = jpeg_enc_process(enc, s_thm_rgb, tw * th * 2, out, (int)cap, &len);
+    jpeg_enc_close(enc);
+    return (r == JPEG_ERR_OK && len > 0) ? (size_t)len : 0;
+}
+
+/* Write the .THM sidecar for `number` from the shutter thumbnail (best effort). */
+void pipeline_thumb_sidecar(int number, const uint16_t *thumb, int w, int h)
+{
+    if (!s_thm_jpg) {
+        return;
+    }
+    const size_t len = pipeline_encode_thumb_jpeg(thumb, w, h, s_thm_jpg, THM_JPG_CAP);
+    if (len) {
+        storage_thumb_write(number, s_thm_jpg, len);
+    }
+}
+
 static size_t write_all(FILE *f, const uint8_t *data, size_t len)
 {
     size_t done = 0;
@@ -436,5 +505,6 @@ pipe_result_t pipeline_take_photo(look_t look, const pipe_meta_t *meta, pipe_cap
     if (out_number) {
         *out_number = number;
     }
+    pipeline_thumb_sidecar(number, s_thumb, camera_preview_w(), camera_preview_h());
     return PIPE_OK;
 }
