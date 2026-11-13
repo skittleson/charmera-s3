@@ -15,7 +15,7 @@ import time
 from bleak import BleakClient, BleakScanner
 
 BASE = "-7b6e-4f0a-9d2e-5a1c8e3f6b20"
-SERVICE, STATUS, COMMAND, INFO = (f"c4a3000{n}{BASE}" for n in range(4))
+SERVICE, STATUS, COMMAND, INFO, STREAM = (f"c4a3000{n}{BASE}" for n in range(5))
 
 results = []
 
@@ -53,6 +53,35 @@ class Camera:
             await asyncio.sleep(0.1)
         await self.read()
         return pred(self.status)
+
+
+async def fetch_file(client, command, timeout=60):
+    """Run list/thumb/get over the STREAM characteristic. Bytes, or None if refused."""
+    got = {"buf": bytearray(), "end": None, "err": None}
+    done = asyncio.Event()
+
+    def on_stream(_char, data):
+        kind = data[0]
+        if kind == 1:
+            got["buf"] += data[1:]
+        elif kind == 2:
+            got["end"] = int.from_bytes(data[1:5], "big")
+            done.set()
+        elif kind == 3:
+            got["err"] = bytes(data[1:]).decode()
+            done.set()
+
+    await client.start_notify(STREAM, on_stream)
+    try:
+        await client.write_gatt_char(COMMAND, command.encode(), response=True)
+        await asyncio.wait_for(done.wait(), timeout)
+    except asyncio.TimeoutError:
+        return None
+    finally:
+        await client.stop_notify(STREAM)
+    if got["err"] or got["end"] != len(got["buf"]):
+        return None
+    return bytes(got["buf"])
 
 
 async def main():
@@ -121,12 +150,25 @@ async def main():
         check("shoot -> busy was reported while saving", any(s["busy"] for s in cam.seen))
         print(f"      saved {cam.status['last']}")
 
+        # File service: the new photo is listed, its preview streams as a JPEG, and a
+        # missing photo is refused with an error frame.
+        shot = int(cam.status["last"][4:])
+        blob = await fetch_file(client, "list")
+        listed = json.loads(blob) if blob else []
+        check("list -> includes the new photo", any(n == shot for n, _ in listed), str(listed[-3:]))
+        thumb = await fetch_file(client, f"thumb {shot}")
+        check("thumb -> small JPEG sidecar", bool(thumb) and thumb[:2] == b"\xff\xd8" and len(thumb) < 40000,
+              f"{len(thumb or b'')} bytes")
+        check("get 9999 -> refused", await fetch_file(client, "get 9999") is None)
+
         await cam.send("lapse start")
         check("lapse start -> running", await cam.wait(lambda s: s["running"]), str(cam.status))
         check("lapse reached 2 frames", await cam.wait(lambda s: s["frames"] >= 2, timeout=30), str(cam.status))
         await cam.send("look 1")
+        # Like stop, a refusal is only reported once the in-flight (slow-look) frame is saved.
         check("look during run -> refused, run continues",
-              await cam.wait(lambda s: s["error"] == "time-lapse running" and s["running"] and s["look"] == 3),
+              await cam.wait(lambda s: s["error"] == "time-lapse running" and s["running"] and s["look"] == 3,
+                             timeout=30),
               str(cam.status))
         await cam.send("orientation auto")
         check("orientation during run -> refused",
@@ -137,7 +179,10 @@ async def main():
               str(cam.status))
         folder = cam.status["folder"]
         await cam.send("lapse stop")
-        check("lapse stop -> stopped", await cam.wait(lambda s: not s["running"], timeout=20), str(cam.status))
+        # Stop lands after the in-flight frame finishes (a save must complete
+        # atomically). On a slow look a frame can run 15-20 s, more with
+        # capture retries — so allow 45 s.
+        check("lapse stop -> stopped", await cam.wait(lambda s: not s["running"], timeout=45), str(cam.status))
         print(f"      time-lapse frames went to {folder}")
         await cam.send("lapse stop")
         check("lapse stop again -> not running", await cam.wait(lambda s: s["error"] == "not running"),

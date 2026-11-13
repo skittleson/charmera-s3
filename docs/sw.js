@@ -2,7 +2,7 @@
 // network afterwards. Requests are served from the cache at once and refreshed in the
 // background (stale-while-revalidate), so a new version shows up on the next launch.
 // Bump VERSION when the shell's file list changes.
-const VERSION = 'charmera-remote-v3';
+const VERSION = 'charmera-remote-v4';
 const SHELL = [
   './',
   'index.html',

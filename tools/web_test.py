@@ -60,6 +60,10 @@ async def main():
         await cdp.call("Page.enable", {}, sid)
         await cdp.call("Runtime.enable", {}, sid)
         await cdp.call("DeviceAccess.enable", {}, sid)
+        # Test the files on disk, not a service-worker cached copy of an older build.
+        await cdp.call("Network.enable", {}, sid)
+        await cdp.call("Network.setBypassServiceWorker", {"bypass": True}, sid)
+        await cdp.call("Network.setCacheDisabled", {"cacheDisabled": True}, sid)
         await cdp.call("Page.navigate", {"url": URL}, sid)
         await asyncio.sleep(2)
         print("page:", await ev("document.title"), "| unsupported shown:", await ev("!$('unsupported').hidden"))
@@ -90,18 +94,22 @@ async def main():
             return False
 
         def report(name, ok):
+            ok = bool(ok)
             log.append(ok)
             print(("PASS " if ok else "FAIL ") + name)
 
-        report("connected, panel enabled", await until("!$('panel').classList.contains('disabled') && status !== null"))
-        print("   ", await ev("$('conn-state').textContent"))
-        print("    cards:", await ev("['photos','left','battery','camera'].map(i=>$(i).textContent).join(' | ')"))
-        report("look list filled from Info (12)", await ev("$('look').options.length") == 12)
+        report("connected, controls enabled", await until("ready && !$('app').classList.contains('disabled') && status !== null"))
+        if not log[-1]:
+            print("    hint:", await ev("$('connect-hint').textContent"))
+            print("    device connected:", await ev("!!(device && device.gatt.connected)"))
+        print("    chip:", await ev("$('conn-chip').textContent"))
+        print("    chips:", await ev("['photos','left','battery','camera'].map(i=>$(i).textContent).join(' | ')"))
+        report("look pills filled from Info (12)", await ev("$('looks').children.length") == 12)
         report("interval list filled (5)", await ev("$('interval').options.length") == 5)
 
-        await ev("$('look').value='2'; $('look').dispatchEvent(new Event('change'))")
-        report("look select -> camera reports look 2", await until("status.look === 2"))
-        await ev("$('look').value='0'; $('look').dispatchEvent(new Event('change'))")
+        await ev("$('looks').children[2].click()")
+        report("look pill -> camera reports look 2", await until("status.look === 2"))
+        await ev("$('looks').children[0].click()")
         report("look back to Normal", await until("status.look === 0"))
 
         await ev("$('mode-lapse').click()")
@@ -109,27 +117,41 @@ async def main():
         await ev("$('mode-single').click()")
         report("mode Single shot", await until("status.mode === 'single'"))
 
-        before = await ev("status.photos")
+        before = await ev("status ? status.photos : -1")
+        if before is None or before < 0:
+            print("FAIL cannot proceed without status"); ok = False
+            await cdp.call("Target.closeTarget", {"targetId": tid}); pump.cancel(); return
         await ev("$('shoot').click()")
-        report("shutter -> busy shown, controls locked", await until("status.busy && $('look').disabled && $('shoot').classList.contains('busy')"))
+        report("shutter -> busy shown, controls locked", await until("status.busy && $('shoot').classList.contains('busy')"))
         report("shutter -> photo saved (Normal, sensor JPEG)", await until(f"status.photos === {before + 1} && !status.busy", 25))
         print("   ", await ev("$('last').textContent"))
+        report("auto-preview thumbnail shown", await until("!$('preview').hidden && $('preview').src.startsWith('blob:')", 20))
 
         await ev("$('interval').value='0'; $('interval').dispatchEvent(new Event('change'))")
         report("interval 5 s", await until("status.interval === 0"))
         await ev("$('lapse-start').click()")
-        report("Start -> running card shown, look/shutter locked, Stop enabled",
-               await until("status.running && !$('lapse-card').hidden && $('look').disabled && $('shoot').disabled && !$('lapse-stop').disabled"))
+        report("Start -> running line shown, shutter locked, Stop enabled",
+               await until("status.running && !$('lapse-line').hidden && $('shoot').disabled && !$('lapse-stop').disabled"))
         report("time-lapse 2 frames", await until("status.frames >= 2", 30))
-        print("   ", await ev("$('lapse').textContent"))
+        print("   ", await ev("$('lapse-line').textContent"))
         await ev("window.confirm = () => true; $('lapse-stop').click()")
-        report("Stop (confirmed) -> stopped, controls unlocked", await until("!status.running && !$('look').disabled", 20))
+        report("Stop (confirmed) -> stopped, controls unlocked", await until("!status.running && !$('shoot').disabled", 20))
+
+        # gallery: tab switch triggers list; cells appear
+        await ev("$('tab-gallery').click()")
+        report("gallery lists card photos", await until("gallery.length > 0 && $('grid').children.length > 0", 25))
+        print("    gallery-info:", await ev("$('gallery-info').textContent"))
+        print("    gallery:", await ev("gallery.length"), "photos, first cell", await ev("$('grid').firstChild.textContent"))
+        report("gallery cell opens viewer with thumbnail",
+               await ev("(async () => { $('grid').firstChild.click(); "
+                        "await new Promise(r => setTimeout(r, 8000)); "
+                        "return !$('viewer').hidden && !$('viewer-img').hidden; })()"))
 
         await ev("$('interval').value='1'; $('interval').dispatchEvent(new Event('change'))")
         await until("status.interval === 1")
-        await ev("$('connect').click()")  # Disconnect
-        report("Disconnect -> panel disabled, offers Reconnect",
-               await until("$('panel').classList.contains('disabled') && $('connect').textContent === 'Reconnect'"))
+        await ev("device.gatt.disconnect()")
+        report("Disconnect -> controls disabled",
+               await until("$('app').classList.contains('disabled')"))
         print(f"\n{sum(log)}/{len(log)} passed")
         ok = all(log)
         await cdp.call("Target.closeTarget", {"targetId": tid})

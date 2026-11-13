@@ -2,85 +2,113 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101010">
-  <title>Charmera-S3 remote</title>
+  <title>Charmera-S3</title>
   <link rel="stylesheet" href="style.css">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 </head>
 <body>
-  <main>
+  <div id="app" class="disabled">
     <header>
-      <h1>📸 Charmera-S3</h1>
-      <p class="sub">Bluetooth remote</p>
+      <span class="brand">📸 Charmera</span>
+      <span id="conn-chip" class="chip">Not connected</span>
+      <button id="install" class="chip ghost" hidden>⬇ Install</button>
     </header>
+
+    <div id="status" class="chips">
+      <span class="chip">📷 <b id="photos">–</b></span>
+      <span class="chip">💾 <b id="left">–</b></span>
+      <span class="chip">🔋 <b id="battery">–</b></span>
+      <span class="chip">🎥 <b id="camera">–</b></span>
+    </div>
 
     <p id="unsupported" class="notice" hidden>
       This browser can't use Bluetooth. Open this page in <b>Chrome</b> or <b>Edge</b> on a computer or
       Android phone. iPhone browsers don't support Web Bluetooth.
     </p>
 
-    <section id="connect-box">
-      <button id="connect" class="primary">Connect to camera</button>
-      <p id="conn-state" class="muted">Not connected</p>
-      <button id="install" hidden>⬇ Install app (works offline)</button>
-    </section>
+    <p id="error" class="error" hidden></p>
+    <p id="lapse-line" class="lapse-line" hidden></p>
 
-    <section id="panel" class="disabled">
-      <div class="cards">
-        <div class="card"><span class="label">Photos</span><span id="photos" class="value">–</span></div>
-        <div class="card"><span class="label">Left</span><span id="left" class="value">–</span></div>
-        <div class="card"><span class="label">Battery</span><span id="battery" class="value">–</span></div>
-        <div class="card"><span class="label">Camera</span><span id="camera" class="value">–</span></div>
-      </div>
-
-      <div id="lapse-card" class="card wide" hidden>
-        <span class="label">Time-lapse</span>
-        <span id="lapse" class="value small">–</span>
-      </div>
-
-      <p id="error" class="error" hidden></p>
-      <p id="last" class="muted"></p>
-
-      <label class="row">Look
-        <select id="look"></select>
-      </label>
-
-      <div class="row">Mode
-        <div class="seg" role="radiogroup">
-          <button id="mode-single" role="radio">Single shot</button>
-          <button id="mode-lapse" role="radio">Time-lapse</button>
+    <!-- ============ CAMERA ============ -->
+    <section id="view-camera">
+      <div id="preview-box">
+        <img id="preview" alt="" hidden>
+        <div id="preview-hint">
+          <span id="preview-text">Press the shutter.<br>Your shot lands here.</span>
+          <span id="preview-progress" hidden>Fetching preview…</span>
         </div>
       </div>
 
-      <label class="row">Every
-        <select id="interval"></select>
-      </label>
+      <div id="looks" class="pill-row" role="listbox" aria-label="Look"></div>
 
-      <label class="row">Orientation
-        <select id="orientation">
+      <div class="row">
+        <div class="seg" role="radiogroup" aria-label="Mode">
+          <button id="mode-single" role="radio">Single</button>
+          <button id="mode-lapse" role="radio">Time-lapse</button>
+        </div>
+        <select id="interval" aria-label="Interval"></select>
+        <button id="lapse-start">▶</button>
+        <button id="lapse-stop" class="danger" disabled>■</button>
+      </div>
+
+      <div class="row compact">
+        <select id="orientation" aria-label="Orientation">
           <option value="portrait">Portrait (USB-C down)</option>
           <option value="landscape-right">Landscape, USB-C right</option>
           <option value="landscape-left">Landscape, USB-C left</option>
           <option value="auto">Auto</option>
         </select>
-      </label>
-
-      <button id="shoot" class="shutter" aria-label="Take a photo"></button>
-
-      <div class="buttons">
-        <button id="lapse-start">Start time-lapse</button>
-        <button id="lapse-stop" class="danger">Stop time-lapse</button>
+        <label class="toggle"><input type="checkbox" id="preview-toggle"> Preview after shot</label>
       </div>
+
+      <div class="shutter-row">
+        <button id="shoot" class="shutter" aria-label="Take a photo"><span></span></button>
+      </div>
+      <p id="last" class="muted"></p>
     </section>
 
+    <!-- ============ GALLERY ============ -->
+    <section id="view-gallery" hidden>
+      <div class="row compact">
+        <button id="gallery-refresh" class="ghost">↻ Refresh</button>
+        <span id="gallery-info" class="muted">Not loaded yet</span>
+      </div>
+      <div id="grid"></div>
+    </section>
+
+    <nav id="tabs">
+      <button id="tab-camera" class="active">📷 Camera</button>
+      <button id="tab-gallery">🗂️ Gallery</button>
+    </nav>
+
     <footer class="muted">
-      Commands and UUIDs are in the
-      <a href="https://github.com/skittleson/charmera-s3#-bluetooth-remote">README</a>.
+      Protocol and firmware:
+      <a href="https://github.com/skittleson/charmera-s3#-bluetooth-remote">README</a>
     </footer>
-  </main>
+  </div>
+
+  <div id="connect-overlay">
+    <div class="connect-card">
+      <h1>📸 Charmera-S3</h1>
+      <p class="sub">Your camera, in your pocket's pocket.</p>
+      <button id="connect" class="primary">Connect to camera</button>
+      <p id="connect-hint" class="muted">Chrome or Edge · Android, Windows, macOS, ChromeOS</p>
+    </div>
+  </div>
+
+  <div id="viewer" hidden>
+    <div id="viewer-bar">
+      <button id="viewer-close" class="ghost">✕</button>
+      <span id="viewer-title"></span>
+      <button id="viewer-download" class="ghost" disabled>⬇ Full-size</button>
+    </div>
+    <div id="viewer-body"><span id="viewer-progress"></span><img id="viewer-img" alt=""></div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

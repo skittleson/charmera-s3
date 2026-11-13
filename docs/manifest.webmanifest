@@ -1,7 +1,7 @@
 {
-  "name": "Charmera-S3 remote",
+  "name": "Charmera-S3",
   "short_name": "Charmera",
-  "description": "Bluetooth remote for the Charmera-S3 pocket camera: status, looks, shutter and time-lapse.",
+  "description": "Camera interface for the Charmera-S3 pocket camera: shoot, preview, browse the card, and download photos over Bluetooth.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
