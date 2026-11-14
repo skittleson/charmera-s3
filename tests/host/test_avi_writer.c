@@ -89,6 +89,17 @@ static void test_header_sizes_patched(void)
     fseek(r, 4, SEEK_SET);
     TEST_ASSERT_EQUAL(4, fread(v, 1, 4, r));
     TEST_ASSERT_EQUAL((uint32_t)(size - 8), (uint32_t)v[0] | ((uint32_t)v[1] << 8) | ((uint32_t)v[2] << 16) | ((uint32_t)v[3] << 24));
+    /* strh scale/rate: ms-per-frame = scale/rate must be 125000/1000000 (8 fps),
+       matching avih dwMicroSecPerFrame. */
+    uint32_t scale, rate;
+    fseek(r, 116, SEEK_SET);
+    TEST_ASSERT_EQUAL(4, fread(v, 1, 4, r));
+    scale = (uint32_t)v[0] | ((uint32_t)v[1] << 8) | ((uint32_t)v[2] << 16) | ((uint32_t)v[3] << 24);
+    fseek(r, 120, SEEK_SET);
+    TEST_ASSERT_EQUAL(4, fread(v, 1, 4, r));
+    rate = (uint32_t)v[0] | ((uint32_t)v[1] << 8) | ((uint32_t)v[2] << 16) | ((uint32_t)v[3] << 24);
+    TEST_ASSERT_EQUAL(125000, scale);
+    TEST_ASSERT_EQUAL(1000000, rate);
     fclose(r);
 }
 

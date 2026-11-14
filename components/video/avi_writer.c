@@ -70,14 +70,14 @@ bool avi_writer_open(avi_writer_t *w, FILE *f, uint32_t width, uint32_t height)
     put_u32(h + 32, US_PER_FRAME);
     put_u32(h + 36, width * height * 3 * FPS); /* max bytes/sec estimate */
     put_u32(h + 40, 0);                        /* padding */
-    put_u32(h + 44, 0x10);                     /* AVIF_HAS_VIDEO */
+    put_u32(h + 44, 0);                        /* flags: no index chunk is written */
     put_u32(h + OFF_TOTAL_FRAMES, 0);          /* patched on close */
     put_u32(h + 52, 0);                        /* initial frames */
     put_u32(h + 56, width * height * 3);       /* max buffer size */
     put_u32(h + 60, 0);                        /* quality */
     put_u32(h + 64, 0);                        /* sample size */
-    put_u32(h + 68, width);                    /* rcFrame.left */
-    put_u32(h + 72, height);                   /* rcFrame.top */
+    put_u32(h + 68, width);                    /* rcFrame.right */
+    put_u32(h + 72, height);                   /* rcFrame.bottom */
 
     /* LIST strl */
     memcpy(h + 76, "LIST", 4);
@@ -93,8 +93,8 @@ bool avi_writer_open(avi_writer_t *w, FILE *f, uint32_t width, uint32_t height)
     put_u16(h + 108, 0); /* priority */
     put_u16(h + 110, 0); /* language */
     put_u32(h + 112, 0); /* initial frames */
-    put_u32(h + 116, FPS); /* scale */
-    put_u32(h + 120, 1000); /* rate: 8/1000 s per frame */
+    put_u32(h + 116, US_PER_FRAME); /* scale: ms-per-frame = scale/rate, matching avih */
+    put_u32(h + 120, 1000000);      /* rate */
     put_u32(h + 124, 0); /* start */
     put_u32(h + OFF_C_SAMPLES, 0); /* patched on close */
     put_u32(h + 132, width * height * 3); /* suggested buffer */
