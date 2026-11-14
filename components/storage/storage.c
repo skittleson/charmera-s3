@@ -144,9 +144,19 @@ static bool try_mount(void)
     return true;
 }
 
+/* ---------- drive mode: raw card access, FatFs unmounted ---------- */
+
+static sdmmc_card_t *s_raw;
+static int s_raw_slot = -1;
+static bool s_drive;
+
 storage_state_t storage_status(void)
 {
     board_spi_lock();
+    if (s_drive) {
+        board_spi_unlock();
+        return STORAGE_NO_CARD;
+    }
     if (s_mounted && sdmmc_get_status(s_card) != ESP_OK) {
         ESP_LOGW(TAG, "card removed");
         unmount();
@@ -595,4 +605,79 @@ void storage_lapse_end(void)
     s_lapse = false;
     strlcpy(s_dir, STORAGE_PHOTO_DIR, sizeof(s_dir));
     board_spi_unlock();
+}
+
+esp_err_t storage_drive_take(void)
+{
+    board_spi_lock();
+    esp_err_t err = ESP_ERR_NOT_FOUND;
+    if (s_drive) {
+        err = ESP_ERR_INVALID_STATE;
+    } else if (s_mounted || try_mount()) {
+        esp_vfs_fat_sdcard_unmount(STORAGE_MOUNT, s_card);
+        s_mounted = false;
+        s_card = NULL;
+        sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+        host.slot = BOARD_SPI_HOST;
+        host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
+        sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
+        slot.gpio_cs = BOARD_PIN_SD_CS;
+        slot.host_id = BOARD_SPI_HOST;
+        sdspi_dev_handle_t hdl;
+        s_raw = calloc(1, sizeof(sdmmc_card_t));
+        if (!s_raw) {
+            err = ESP_ERR_NO_MEM;
+        } else if (sdspi_host_init_device(&slot, &hdl) != ESP_OK) {
+            free(s_raw);
+            s_raw = NULL;
+            err = ESP_FAIL;
+        } else {
+            s_raw_slot = hdl;
+            host.slot = hdl;
+            err = sdmmc_card_init(&host, s_raw);
+            if (err != ESP_OK) {
+                sdspi_host_remove_device(hdl);
+                s_raw_slot = -1;
+                free(s_raw);
+                s_raw = NULL;
+            }
+        }
+    }
+    if (err == ESP_OK) {
+        s_drive = true;
+    }
+    board_spi_unlock();
+    return err;
+}
+
+void storage_drive_give(void)
+{
+    board_spi_lock();
+    if (s_raw) {
+        free(s_raw);
+        s_raw = NULL;
+        if (s_raw_slot >= 0) {
+            sdspi_host_remove_device(s_raw_slot);
+            s_raw_slot = -1;
+        }
+    }
+    s_drive = false;
+    try_mount(); /* remount + rescan so counts and next-number are true again */
+    board_spi_unlock();
+}
+
+esp_err_t storage_raw_read(uint32_t sector, uint32_t count, void *dst)
+{
+    board_spi_lock();
+    const esp_err_t err = (s_drive && s_raw) ? sdmmc_read_sectors(s_raw, dst, sector, count) : ESP_ERR_INVALID_STATE;
+    board_spi_unlock();
+    return err;
+}
+
+uint32_t storage_raw_sectors(void)
+{
+    board_spi_lock();
+    const uint32_t n = (s_drive && s_raw) ? s_raw->csd.capacity : 0;
+    board_spi_unlock();
+    return n;
 }

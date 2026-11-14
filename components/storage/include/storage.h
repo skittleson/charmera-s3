@@ -65,3 +65,13 @@ bool storage_numbers_left(void);
    out_folder gets the folder name, e.g. "101LAPSE". */
 esp_err_t storage_lapse_begin(char *out_folder, size_t len);
 void storage_lapse_end(void);
+
+/* ---- drive mode: raw card access with FatFs unmounted ----
+   storage_drive_take() unmounts FatFs and re-initialises the card for raw sector
+   reads; no VFS path may be touched until storage_drive_give(). While taken,
+   storage_status() reports STORAGE_NO_CARD so nothing else mounts over us.
+   All raw reads take the SPI bus lock internally. */
+esp_err_t storage_drive_take(void);
+void storage_drive_give(void);
+esp_err_t storage_raw_read(uint32_t sector, uint32_t count, void *dst);
+uint32_t storage_raw_sectors(void);
