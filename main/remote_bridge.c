@@ -87,11 +87,14 @@ static void mem_done(void *ctx)
     free(r);
 }
 
-/* Photo number -> JPEG path; sidecar when thumb. */
+/* Photo number -> image path (IMG_####.JPG, or .AVI for clips); sidecar when thumb. */
 static bool photo_path(int number, bool thumb, char *out, size_t len)
 {
     if (thumb) {
         return storage_thumb_path(number, out, len) == ESP_OK;
+    }
+    if (storage_is_video(number)) {
+        return storage_clip_path(number, out, len) == ESP_OK;
     }
     return storage_photo_path(number, out, len) == ESP_OK;
 }
@@ -144,7 +147,10 @@ static const char *stream_list(void)
     for (size_t i = 0; i < n; i++) {
         char path[64];
         size_t size = 0;
-        storage_photo_path(nums[i], path, sizeof(path));
+        if (storage_is_video(nums[i]) ? storage_clip_path(nums[i], path, sizeof(path)) != ESP_OK
+                                      : storage_photo_path(nums[i], path, sizeof(path)) != ESP_OK) {
+            continue;
+        }
         if (storage_file_size(path, &size)) {
             used += snprintf(json + used, 20, "%s[%d,%u]", entries ? "," : "", nums[i], (unsigned)size);
             entries++;

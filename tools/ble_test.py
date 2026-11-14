@@ -188,6 +188,31 @@ async def main():
         check("lapse stop again -> not running", await cam.wait(lambda s: s["error"] == "not running"),
               str(cam.status))
 
+        # Video: mode video -> shoot starts a clip, refusals say "recording",
+        # lapse stop commits it, and the clip appears in list.
+        await cam.send("mode video")
+        check("mode video", await cam.wait(lambda s: s["mode"] == "video"), str(cam.status))
+        await cam.send("look 1")
+        check("look during video mode (idle) allowed", await cam.wait(lambda s: s["look"] == 1), str(cam.status))
+        before = cam.status["photos"]
+        cam.seen.clear()
+        await cam.send("shoot")
+        check("shoot in video mode -> recording", await cam.wait(lambda s: s.get("recording")), str(cam.status))
+        await cam.send("look 3")
+        check("look during clip -> refused 'recording'",
+              await cam.wait(lambda s: s["error"] == "recording" and s["recording"]), str(cam.status))
+        check("clip recorded frames",
+              await cam.wait(lambda s: s["frames"] >= 4 and s["recording"], timeout=15), str(cam.status))
+        await cam.send("lapse stop")
+        ok = await cam.wait(lambda s: not s["recording"] and s["photos"] == before + 1
+                            and s["last"].startswith("IMG_"), timeout=30)
+        check("lapse stop -> clip saved, count +1", ok, str(cam.status))
+        clip = int(cam.status["last"][4:])
+        listed = json.loads(await fetch_file(client, "list") or "[]")
+        check("list includes the new clip", any(n == clip for n, _ in listed), str(listed[-3:]))
+        check("clip thumb -> refused", await fetch_file(client, f"thumb {clip}") is None)
+
+        await cam.send("mode single")
         for cmd in ("look 0", "interval 1", "mode single"):
             await cam.send(cmd)
         check("restored Normal / 10 s / single",
