@@ -35,6 +35,19 @@ bool avi_writer_close(avi_writer_t *w);
    caller-provided scratch buffer (PSRAM on-device) that must hold the largest frame;
    frames larger than `cap` stop the walk and set *truncated. A clean end-of-file stops
    with *truncated false; a cut file stops at the first incomplete chunk with it true.
-   Returns the number of complete frames, or -1 if the file is not an AVI clip. */
+   `start_frame` skips that many complete frames before the first callback (for sequential
+   playback). Returns the total number of complete frames in the file, or -1 if the file is
+   not an AVI clip. */
 typedef bool (*avi_frame_cb)(void *ctx, const uint8_t *jpeg, size_t len);
-int avi_writer_parse(const char *path, uint8_t *buf, size_t cap, avi_frame_cb cb, void *ctx, bool *truncated);
+int avi_writer_parse(const char *path, uint8_t *buf, size_t cap, int start_frame, avi_frame_cb cb, void *ctx,
+                     bool *truncated);
+
+/* Streaming reader for playback: keeps the file open and yields one frame per call,
+   in order, without re-reading earlier frames. NULL if the file is not an AVI clip. */
+typedef struct {
+    FILE *f;
+} avi_reader_t;
+avi_reader_t *avi_reader_open(const char *path);
+/* Read the next frame into buf (cap bytes). Returns its length, or 0 at end of stream. */
+size_t avi_reader_next(avi_reader_t *r, uint8_t *buf, size_t cap);
+void avi_reader_close(avi_reader_t *r);

@@ -424,16 +424,15 @@ FILE *storage_video_begin(int *out_number)
     return f;
 }
 
-/* Close and rename VIO_####.TMP -> IMG_####.AVI, marking the number as a clip. */
-esp_err_t storage_video_commit(FILE *f, int number)
+/* Rename VIO_####.TMP -> IMG_####.AVI, marking the number as a clip. The caller has
+   already closed the file (the AVI writer does). */
+esp_err_t storage_video_commit(int number)
 {
     board_spi_lock();
-    bool ok = fflush(f) == 0;
-    ok = (fclose(f) == 0) && ok;
     char tmp[64], final[64];
     clip_tmp_path(number, tmp, sizeof(tmp));
     clip_final_path(number, final, sizeof(final));
-    if (ok && rename(tmp, final) == 0) {
+    if (rename(tmp, final) == 0) {
         const int next = number >= STORAGE_MAX_NUMBER ? -1 : number + 1;
         s_photo_count++;
         s_next_number = next;
@@ -449,13 +448,10 @@ esp_err_t storage_video_commit(FILE *f, int number)
     return ESP_FAIL;
 }
 
-/* Close and delete the VIO temp: a power loss mid-clip leaves no gallery entry. */
-void storage_video_abort(FILE *f, int number)
+/* Delete the VIO temp: a power loss or an error mid-clip leaves no gallery entry. */
+void storage_video_abort(int number)
 {
     board_spi_lock();
-    if (f) {
-        fclose(f);
-    }
     char tmp[64];
     clip_tmp_path(number, tmp, sizeof(tmp));
     unlink(tmp);

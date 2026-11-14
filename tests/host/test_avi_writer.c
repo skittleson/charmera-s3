@@ -58,7 +58,7 @@ static void test_round_trip_three_frames(void)
     uint8_t buf[512];
     captured_t c = {0};
     bool truncated = true;
-    const int n = avi_writer_parse(PATH, buf, sizeof(buf), capture, &c, &truncated);
+    const int n = avi_writer_parse(PATH, buf, sizeof(buf), 0, capture, &c, &truncated);
     TEST_ASSERT_EQUAL(3, n);
     TEST_ASSERT_FALSE(truncated);
     TEST_ASSERT_EQUAL(3, c.count);
@@ -125,9 +125,33 @@ static void test_truncated_file_stops_cleanly(void)
     uint8_t buf[512];
     captured_t c = {0};
     bool truncated = false;
-    const int n = avi_writer_parse(PATH, buf, sizeof(buf), capture, &c, &truncated);
+    const int n = avi_writer_parse(PATH, buf, sizeof(buf), 0, capture, &c, &truncated);
     TEST_ASSERT_EQUAL(1, n); /* only the first frame survived */
     TEST_ASSERT_TRUE(truncated);
+}
+
+static void test_start_frame_skips(void)
+{
+    make_frames();
+    FILE *f = fopen(PATH, "wb");
+    TEST_ASSERT_NOT_NULL(f);
+    avi_writer_t w;
+    TEST_ASSERT_TRUE(avi_writer_open(&w, f, 320, 240));
+    TEST_ASSERT_TRUE(avi_writer_frame(&w, frame0, sizeof(frame0)));
+    TEST_ASSERT_TRUE(avi_writer_frame(&w, frame1, sizeof(frame1)));
+    TEST_ASSERT_TRUE(avi_writer_frame(&w, frame2, sizeof(frame2)));
+    TEST_ASSERT_TRUE(avi_writer_close(&w));
+
+    uint8_t buf[512];
+    captured_t c = {0};
+    bool truncated = true;
+    /* Skip the first two frames: only the third is delivered. */
+    const int n = avi_writer_parse(PATH, buf, sizeof(buf), 2, capture, &c, &truncated);
+    TEST_ASSERT_EQUAL(3, n); /* total complete frames in the file */
+    TEST_ASSERT_FALSE(truncated);
+    TEST_ASSERT_EQUAL(1, c.count);
+    TEST_ASSERT_EQUAL(sizeof(frame2), c.sizes[0]);
+    TEST_ASSERT_EQUAL_MEMORY(frame2, c.data[0], sizeof(frame2));
 }
 
 static void test_not_an_avi(void)
@@ -138,7 +162,7 @@ static void test_not_an_avi(void)
     fclose(f);
     uint8_t buf[64];
     bool truncated = false;
-    TEST_ASSERT_EQUAL(-1, avi_writer_parse(PATH, buf, sizeof(buf), NULL, NULL, &truncated));
+    TEST_ASSERT_EQUAL(-1, avi_writer_parse(PATH, buf, sizeof(buf), 0, NULL, NULL, &truncated));
 }
 
 int main(void)
@@ -147,6 +171,7 @@ int main(void)
     RUN_TEST(test_round_trip_three_frames);
     RUN_TEST(test_header_sizes_patched);
     RUN_TEST(test_truncated_file_stops_cleanly);
+    RUN_TEST(test_start_frame_skips);
     RUN_TEST(test_not_an_avi);
     remove(PATH);
     return UNITY_END();

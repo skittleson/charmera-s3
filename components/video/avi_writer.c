@@ -1,5 +1,6 @@
 #include "avi_writer.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 /* Offsets of the fields avi_writer_close() patches, and where frame data begins.
@@ -174,7 +175,8 @@ bool avi_writer_close(avi_writer_t *w)
     return ok;
 }
 
-int avi_writer_parse(const char *path, uint8_t *buf, size_t cap, avi_frame_cb cb, void *ctx, bool *truncated)
+int avi_writer_parse(const char *path, uint8_t *buf, size_t cap, int start_frame, avi_frame_cb cb, void *ctx,
+                     bool *truncated)
 {
     if (truncated) {
         *truncated = false;
@@ -195,6 +197,7 @@ int avi_writer_parse(const char *path, uint8_t *buf, size_t cap, avi_frame_cb cb
         return -1;
     }
     for (;;) {
+        const bool emit = frames >= start_frame;
         uint8_t c[8];
         if (fread(c, 1, 8, f) != 8) {
             cut = (feof(f) == 0); /* ran out mid-chunk-header */
@@ -219,7 +222,7 @@ int avi_writer_parse(const char *path, uint8_t *buf, size_t cap, avi_frame_cb cb
                 break;
             }
         }
-        if (cb && !cb(ctx, buf, len)) {
+        if (emit && cb && !cb(ctx, buf, len)) {
             break; /* caller stopped the walk */
         }
         frames++;
@@ -229,4 +232,57 @@ int avi_writer_parse(const char *path, uint8_t *buf, size_t cap, avi_frame_cb cb
         *truncated = cut;
     }
     return frames;
+}
+
+avi_reader_t *avi_reader_open(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return NULL;
+    }
+    uint8_t hdr[4];
+    if (fread(hdr, 1, 4, f) != 4 || memcmp(hdr, "RIFF", 4) != 0 || fseek(f, OFF_FRAMES, SEEK_SET) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    avi_reader_t *r = malloc(sizeof(*r));
+    if (!r) {
+        fclose(f);
+        return NULL;
+    }
+    r->f = f;
+    return r;
+}
+
+size_t avi_reader_next(avi_reader_t *r, uint8_t *buf, size_t cap)
+{
+    if (!r || !r->f || !buf) {
+        return 0;
+    }
+    uint8_t c[8];
+    if (fread(c, 1, 8, r->f) != 8 || memcmp(c, "00dc", 4) != 0) {
+        return 0; /* end of stream or foreign data */
+    }
+    const uint32_t len = (uint32_t)c[4] | ((uint32_t)c[5] << 8) | ((uint32_t)c[6] << 16) | ((uint32_t)c[7] << 24);
+    if (len > cap || fread(buf, 1, len, r->f) != len) {
+        return 0; /* frame bigger than the buffer, or a cut file */
+    }
+    if (len & 1) {
+        uint8_t pad;
+        if (fread(&pad, 1, 1, r->f) != 1) {
+            return 0;
+        }
+    }
+    return len;
+}
+
+void avi_reader_close(avi_reader_t *r)
+{
+    if (!r) {
+        return;
+    }
+    if (r->f) {
+        fclose(r->f);
+    }
+    free(r);
 }

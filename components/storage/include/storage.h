@@ -30,10 +30,11 @@ bool storage_is_video(int number);
 
 /* Video clips: IMG_####.AVI in the photo folder, same number sequence as photos.
    Written to VIO_####.TMP and renamed on commit, so a power loss mid-clip leaves no
-   gallery entry (the rescan deletes leftover .TMP files). */
+   gallery entry (the rescan deletes leftover .TMP files). The clip's FILE* is owned by
+   the AVI writer; commit/abort run after it has closed. */
 FILE *storage_video_begin(int *out_number);
-esp_err_t storage_video_commit(FILE *f, int number);
-void storage_video_abort(FILE *f, int number);
+esp_err_t storage_video_commit(int number);
+void storage_video_abort(int number);
 
 /* Open the next IMG_####.TMP for writing. NULL if no card or numbering is used up. */
 FILE *storage_begin_photo(int *out_number);
