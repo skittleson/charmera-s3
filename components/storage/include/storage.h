@@ -21,9 +21,19 @@ typedef struct {
 storage_state_t storage_status(void);
 esp_err_t storage_info(storage_info_t *out);
 
-/* Photo numbers in ascending order. Caller frees *numbers. */
+/* Photo numbers in ascending order (clips included). Caller frees *numbers. */
 esp_err_t storage_list_photos(int **numbers, size_t *count);
 esp_err_t storage_photo_path(int number, char *out, size_t len);
+esp_err_t storage_clip_path(int number, char *out, size_t len);
+/* True when `number` is a video clip (IMG_####.AVI) rather than a photo. */
+bool storage_is_video(int number);
+
+/* Video clips: IMG_####.AVI in the photo folder, same number sequence as photos.
+   Written to VIO_####.TMP and renamed on commit, so a power loss mid-clip leaves no
+   gallery entry (the rescan deletes leftover .TMP files). */
+FILE *storage_video_begin(int *out_number);
+esp_err_t storage_video_commit(FILE *f, int number);
+void storage_video_abort(FILE *f, int number);
 
 /* Open the next IMG_####.TMP for writing. NULL if no card or numbering is used up. */
 FILE *storage_begin_photo(int *out_number);

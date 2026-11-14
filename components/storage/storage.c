@@ -9,6 +9,7 @@
 
 #include "board.h"
 #include "driver/sdspi_host.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_vfs_fat.h"
@@ -29,6 +30,9 @@ static int64_t s_last_mount_try;
 static int s_next_number = 1;
 static uint32_t s_photo_count;
 static uint32_t s_avg_size;
+/* Which photo numbers are video clips (IMG_####.AVI) rather than photos (.JPG).
+   PSRAM: 9999 bits, set at rescan so the gallery can label and play clips. */
+static uint8_t *s_video_bits;
 /* Where photos are written: the photo folder, or a time-lapse run's own folder. */
 static char s_dir[32] = STORAGE_PHOTO_DIR;
 static bool s_lapse;
@@ -67,6 +71,12 @@ static void rescan(void)
 {
     mkdir(STORAGE_MOUNT "/DCIM", 0775);
     mkdir(STORAGE_PHOTO_DIR, 0775);
+    if (!s_video_bits) {
+        s_video_bits = heap_caps_malloc((STORAGE_MAX_NUMBER + 7) / 8, MALLOC_CAP_SPIRAM);
+    }
+    if (s_video_bits) {
+        memset(s_video_bits, 0, (STORAGE_MAX_NUMBER + 7) / 8);
+    }
     s_photo_count = 0;
     int max = 0;
     DIR *d = opendir(STORAGE_PHOTO_DIR);
@@ -88,6 +98,9 @@ static void rescan(void)
             s_photo_count++;
             if (v > max) {
                 max = v;
+            }
+            if (s_video_bits && has_suffix_ci(e->d_name, ".AVI")) {
+                s_video_bits[(v - 1) / 8] |= (uint8_t)(1u << ((v - 1) % 8));
             }
         }
     }
@@ -357,18 +370,115 @@ void storage_abort_photo(FILE *f, int number)
     board_spi_unlock();
 }
 
+/* ---------- video clips (IMG_####.AVI, same number space as photos) ---------- */
+
+static void clip_tmp_path(int number, char *out, size_t len)
+{
+    snprintf(out, len, "%s/VIO_%04d.TMP", s_dir, number);
+}
+
+static void clip_final_path(int number, char *out, size_t len)
+{
+    char name[13];
+    storage_clip_name(number, name);
+    snprintf(out, len, "%s/%s", s_dir, name);
+}
+
+bool storage_is_video(int number)
+{
+    return s_video_bits && number >= 1 && number <= STORAGE_MAX_NUMBER &&
+           (s_video_bits[(number - 1) / 8] & (1u << ((number - 1) % 8)));
+}
+
+esp_err_t storage_clip_path(int number, char *out, size_t len)
+{
+    char name[13];
+    storage_clip_name(number, name);
+    return snprintf(out, len, STORAGE_PHOTO_DIR "/%s", name) < (int)len ? ESP_OK : ESP_ERR_INVALID_SIZE;
+}
+
+/* Open the next VIO_####.TMP in the photo folder for a clip. NULL if no card or
+   numbering is used up. */
+FILE *storage_video_begin(int *out_number)
+{
+    if (storage_status() != STORAGE_OK || s_lapse) {
+        return NULL; /* clips are gallery photos, never time-lapse frames */
+    }
+    board_spi_lock();
+    const int number = current_number();
+    if (number < 1) {
+        board_spi_unlock();
+        return NULL;
+    }
+    mkdir(STORAGE_MOUNT "/DCIM", 0775);
+    mkdir(s_dir, 0775);
+    char path[64];
+    clip_tmp_path(number, path, sizeof(path));
+    FILE *f = fopen(path, "wb");
+    if (f) {
+        *out_number = number;
+    } else {
+        ESP_LOGE(TAG, "open %s failed: %d", path, errno);
+    }
+    board_spi_unlock();
+    return f;
+}
+
+/* Close and rename VIO_####.TMP -> IMG_####.AVI, marking the number as a clip. */
+esp_err_t storage_video_commit(FILE *f, int number)
+{
+    board_spi_lock();
+    bool ok = fflush(f) == 0;
+    ok = (fclose(f) == 0) && ok;
+    char tmp[64], final[64];
+    clip_tmp_path(number, tmp, sizeof(tmp));
+    clip_final_path(number, final, sizeof(final));
+    if (ok && rename(tmp, final) == 0) {
+        const int next = number >= STORAGE_MAX_NUMBER ? -1 : number + 1;
+        s_photo_count++;
+        s_next_number = next;
+        if (s_video_bits) {
+            s_video_bits[(number - 1) / 8] |= (uint8_t)(1u << ((number - 1) % 8));
+        }
+        board_spi_unlock();
+        return ESP_OK;
+    }
+    unlink(tmp);
+    board_spi_unlock();
+    ESP_LOGE(TAG, "commit of clip %d failed", number);
+    return ESP_FAIL;
+}
+
+/* Close and delete the VIO temp: a power loss mid-clip leaves no gallery entry. */
+void storage_video_abort(FILE *f, int number)
+{
+    board_spi_lock();
+    if (f) {
+        fclose(f);
+    }
+    char tmp[64];
+    clip_tmp_path(number, tmp, sizeof(tmp));
+    unlink(tmp);
+    board_spi_unlock();
+}
+
 esp_err_t storage_delete_photo(int number)
 {
     if (storage_status() != STORAGE_OK) {
         return ESP_ERR_NOT_FOUND;
     }
-    char path[64];
+    char path[64], clip[64];
     storage_photo_path(number, path, sizeof(path));
+    storage_clip_path(number, clip, sizeof(clip));
     board_spi_lock();
-    esp_err_t err = unlink(path) == 0 ? ESP_OK : ESP_FAIL;
+    /* A number is either a photo or a clip; unlink both so it works for either. */
+    esp_err_t err = (unlink(path) == 0 || unlink(clip) == 0) ? ESP_OK : ESP_FAIL;
     char thm[64];
     if (storage_thumb_path(number, thm, sizeof(thm)) == ESP_OK) {
         unlink(thm); /* best effort: no sidecar is no error */
+    }
+    if (s_video_bits && number >= 1 && number <= STORAGE_MAX_NUMBER) {
+        s_video_bits[(number - 1) / 8] &= (uint8_t)~(1u << ((number - 1) % 8));
     }
     if (err == ESP_OK && s_photo_count > 0) {
         s_photo_count--;
