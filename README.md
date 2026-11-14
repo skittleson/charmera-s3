@@ -49,6 +49,7 @@ Charmera's most common complaint: **you don't have to pick a mode every time you
 | ⏱️ **Time-lapse** | One photo every 5 s – 5 min, in its own card folder, ready to turn into video. Keeps shooting while the screen sleeps. |
 | 🎬 **Lo-fi video** | 320×240 MJPEG clips at ~8 fps, up to 10 s / 2 MB, with your look applied. Watch them back on the camera's screen. |
 | 📶 **Bluetooth web app** | An installable phone app: shoot, see each shot right after, list the card and download originals. |
+| 💾 **USB Drive mode** | Settings → USB Drive (or `usbdisk on`): plug into a laptop and `DCIM` shows up as a read-only drive — copy photos off without a card reader. Disconnect on the camera, over Bluetooth, or by unplugging. |
 | 🖼️ **Gallery** | On the camera and in the app. Newest first. Step back through shots, delete one or all on the camera. |
 | 🏷️ **Full EXIF** | Camera, date/time, orientation, size, look, time-lapse run and frame. |
 | 🔋 **Battery-friendly** | Dims after 30 s, off after 3 min; the sensor only runs while the viewfinder shows. |
@@ -244,7 +245,7 @@ standard Battery Service:
 | Characteristic | UUID | |
 |---|---|---|
 | Status JSON | `c4a30001-…` | read / notify: `photos`, `left`, `battery`, `usb`, `camera`, `look`, `lookName`, `mode`, `interval`, `intervalName`, `running`, `frames`, `elapsed`, `folder`, `card`, `busy`, `last`, `error`, `clock`, `orientation`, `orientationSetting` |
-| Command | `c4a30002-…` | write text: `look <0-11>`, `mode single`, `mode lapse [0-4]`, `mode video`, `interval <0-4>`, `shoot`, `lapse start`, `lapse stop`, `time <unix seconds> [UTC offset minutes]`, `orientation <portrait\|landscape-right\|landscape-left\|auto>`, `list`, `thumb <n>`, `get <n>`  ·  in video mode, `shoot` records a clip and `lapse stop` ends it |
+| Command | `c4a30002-…` | write text: `look <0-11>`, `mode single`, `mode lapse [0-4]`, `mode video`, `interval <0-4>`, `shoot`, `lapse start`, `lapse stop`, `time <unix seconds> [UTC offset minutes]`, `orientation <portrait\|landscape-right\|landscape-left\|auto>`, `list`, `thumb <n>`, `get <n>`, `usbdisk on\|off`, `format CONFIRM`  ·  in video mode, `shoot` records a clip and `lapse stop` ends it |
 | Info JSON | `c4a30003-…` | read: firmware version, look names, interval names |
 | Stream | `c4a30004-…` | notify: the reply to `list`, `thumb` and `get`, framed as below |
 

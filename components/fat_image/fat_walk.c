@@ -1,9 +1,17 @@
 #include "fat_walk.h"
 
+#ifdef FAT_WALK_DEBUG
+#include <stdio.h>
+#define FWDBG(...) printf("fat_walk: " __VA_ARGS__)
+#define U(x) (unsigned)(x)
+#else
+#define FWDBG(...) (void)0
+#endif
+
 #include <string.h>
 
 #define SECTOR 512
-#define MAX_CLUSTERS 4096
+#define MAX_FILE_CLUSTERS 131072 /* 4 GiB with 32 KiB clusters: above any real photo */
 
 static uint16_t rd16(const uint8_t *p)
 {
@@ -24,6 +32,10 @@ typedef struct {
     uint32_t root_clus;  /* FAT32 root cluster */
     uint32_t data_lba;   /* first sector of cluster 2 */
     bool fat32;
+    /* One-sector FAT cache: chains advance roughly sequentially, so the same FAT
+       sector serves dozens of fat_next calls. */
+    uint32_t cache_lba;
+    uint8_t cache[SECTOR];
 } vol_t;
 
 static bool parse_boot(fat_read_fn read, void *ctx, vol_t *v)
@@ -32,6 +44,7 @@ static bool parse_boot(fat_read_fn read, void *ctx, vol_t *v)
     if (!read(ctx, 0, 1, b) || b[510] != 0x55 || b[511] != 0xAA) {
         return false;
     }
+    v->cache_lba = 0xFFFFFFFFu;
     v->spc = b[13];
     v->rsvd = rd16(b + 14);
     v->nfat = b[16];
@@ -66,9 +79,19 @@ static bool parse_boot(fat_read_fn read, void *ctx, vol_t *v)
 static uint32_t fat_next(const vol_t *v, fat_read_fn read, void *ctx, uint32_t c, bool *eof)
 {
     const uint32_t off = v->fat32 ? c * 4 : c * 2;
-    uint8_t s[SECTOR];
-    if (!read(ctx, v->rsvd + off / SECTOR, 1, s)) {
-        return 0;
+    const uint32_t lba = v->rsvd + off / SECTOR;
+    const uint8_t *s;
+    if (v->cache_lba == lba) {
+        s = v->cache;
+    } else {
+        vol_t *w = (vol_t *)v; /* the cache is ours to fill */
+        if (!read(ctx, lba, 1, w->cache)) {
+            FWDBG("fat_next: read failed at clus %u\n", U(c));
+            *eof = true;
+            return 0;
+        }
+        w->cache_lba = lba;
+        s = v->cache;
     }
     const uint32_t e = off % SECTOR;
     const uint32_t n = v->fat32 ? (rd32(s + e) & 0x0FFFFFFFu) : rd16(s + e);
@@ -135,11 +158,13 @@ static bool find_subdir(const vol_t *v, fat_read_fn read, void *ctx, uint32_t st
         for (uint32_t s = 0; s < v->spc; s++) {
             uint8_t sec[SECTOR];
             if (!read(ctx, cluster_lba(v, c) + s, 1, sec)) {
+                FWDBG("find_subdir %s: read failed at clus %u\n", comp, U(c));
                 return false;
             }
             for (uint32_t i = 0; i < SECTOR / 32; i++) {
                 const uint8_t *e = sec + i * 32;
                 if (e[0] == 0x00) {
+                    FWDBG("find_subdir %s: end of dir at clus %u\n", comp, U(c));
                     return false;
                 }
                 if (e[0] == 0xE5 || e[11] == 0x0F || (e[11] & 0x08) || !(e[11] & 0x10)) {
@@ -161,12 +186,49 @@ static bool find_subdir(const vol_t *v, fat_read_fn read, void *ctx, uint32_t st
     return false;
 }
 
-bool fat_walk(fat_read_fn read, void *read_ctx, fat_alloc_fn alloc, const char *path, fat_walk_cb cb, void *cb_ctx)
+/* Emits a file's cluster chain as runs of consecutive clusters. Returns false only if
+   begin refused (caller stops). A corrupt/looping chain is cut at MAX_FILE_CLUSTERS. */
+static bool emit_chain(const vol_t *v, fat_read_fn read, void *read_ctx, uint32_t first, fat_walk_begin_fn begin,
+                       fat_walk_run_fn run, void *cb_ctx, const char *name, uint32_t size, bool *stop)
+{
+    if (!begin(cb_ctx, name, size)) {
+        *stop = true;
+        return true;
+    }
+    uint32_t c = first;
+    uint32_t run_start = c;
+    uint32_t run_len = 1;
+    bool eof = false;
+    for (uint32_t seen = 1; seen < MAX_FILE_CLUSTERS && !eof; seen++) {
+        const uint32_t nx = fat_next(v, read, read_ctx, c, &eof);
+        if (!eof && nx == c + 1) {
+            run_len++;
+        } else {
+            run(cb_ctx, cluster_lba(v, run_start), run_len);
+            if (eof) {
+                return true;
+            }
+            run_start = nx;
+            run_len = 1;
+        }
+        c = nx;
+    }
+    if (!eof) {
+        run(cb_ctx, cluster_lba(v, run_start), run_len); /* chain cut by MAX_FILE_CLUSTERS */
+    }
+    return true;
+}
+
+bool fat_walk(fat_read_fn read, void *read_ctx, const char *path, fat_walk_begin_fn begin, fat_walk_run_fn run,
+              void *cb_ctx)
 {
     vol_t v;
     if (!parse_boot(read, read_ctx, &v) || !path || !*path) {
+        FWDBG("boot parse failed\n");
         return false;
     }
+    FWDBG("fat32=%d spc=%u rsvd=%u nfat=%u fatsz=%u data=%u rootclus=%u\n", (int)v.fat32, U(v.spc), U(v.rsvd),
+          U(v.nfat), U(v.fatsz), U(v.data_lba), U(v.root_clus));
     /* Resolve each path component. Start at the root: FAT32 root cluster, FAT16 fixed dir. */
     uint32_t dir_clus = v.fat32 ? v.root_clus : 0;
     const char *p = path;
@@ -188,6 +250,7 @@ bool fat_walk(fat_read_fn read, void *read_ctx, fat_alloc_fn alloc, const char *
             found = find_subdir(&v, read, read_ctx, dir_clus, comp, &dir_clus);
         }
         if (!found) {
+            FWDBG("component %s not found\n", comp);
             return false;
         }
         p += n;
@@ -203,6 +266,7 @@ bool fat_walk(fat_read_fn read, void *read_ctx, fat_alloc_fn alloc, const char *
         for (uint32_t s = 0; s < v.spc; s++) {
             uint8_t sec[SECTOR];
             if (!read(read_ctx, cluster_lba(&v, c) + s, 1, sec)) {
+                FWDBG("list: read failed at clus %u\n", U(c));
                 return false;
             }
             for (uint32_t i = 0; i < SECTOR / 32; i++) {
@@ -213,31 +277,15 @@ bool fat_walk(fat_read_fn read, void *read_ctx, fat_alloc_fn alloc, const char *
                 if (e[0] == 0xE5 || e[11] == 0x0F || (e[11] & 0x08) || (e[11] & 0x10)) {
                     continue; /* freed, LFN, label, directory */
                 }
-                fat_walk_entry_t out;
-                entry_name(e, out.name);
-                out.size = rd32(e + 28);
+                char name[13];
+                entry_name(e, name);
+                const uint32_t size = rd32(e + 28);
                 const uint32_t first = rd16(e + 26) | ((uint32_t)rd16(e + 20) << 16);
-                if (out.size == 0 || first < 2) {
+                if (size == 0 || first < 2) {
                     continue;
                 }
-                uint32_t *arr = alloc(MAX_CLUSTERS * sizeof(uint32_t));
-                if (!arr) {
-                    return false;
-                }
-                uint16_t nc = 0;
-                uint32_t cc = first;
-                bool ceof = false;
-                while (nc < MAX_CLUSTERS) {
-                    arr[nc++] = cluster_lba(&v, cc);
-                    const uint32_t nx = fat_next(&v, read, read_ctx, cc, &ceof);
-                    if (ceof) {
-                        break;
-                    }
-                    cc = nx;
-                }
-                out.clusters = arr;
-                out.nclusters = nc;
-                if (!cb(cb_ctx, &out)) {
+                bool stop = false;
+                if (!emit_chain(&v, read, read_ctx, first, begin, run, cb_ctx, name, size, &stop) || stop) {
                     return true;
                 }
             }

@@ -254,6 +254,7 @@ size_t remote_status_json(const remote_status_t *s, char *out, size_t len)
     put_str(&k, s->orientation ? s->orientation : "portrait");
     put(&k, ",\"orientationSetting\":");
     put_str(&k, s->orientation_setting ? s->orientation_setting : "portrait");
+    put(&k, ",\"usbdisk\":%s", s->usbdisk ? "true" : "false");
     put(&k, "}");
     return finish(&k);
 }

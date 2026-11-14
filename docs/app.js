@@ -135,6 +135,7 @@ function render() {
   $('error').hidden = !s.error;
   $('error').textContent = s.error ? `Camera: ${s.error}` : '';
   $('last').textContent = s.last ? `Last saved: ${s.last}` : '';
+  $('usbdisk').textContent = s.usbdisk ? '💾 USB Drive: on (tap to eject)' : '💾 USB Drive';
 
   const locked = s.running || s.busy;
   for (const id of ['interval', 'orientation', 'mode-single', 'mode-lapse', 'shoot']) $(id).disabled = locked;
@@ -440,6 +441,15 @@ function init() {
   $('lapse-start').addEventListener('click', () => send('lapse start'));
   $('lapse-stop').addEventListener('click', () => {
     if (confirm('Stop the time-lapse?')) send('lapse stop');
+  });
+  $('usbdisk').addEventListener('click', () => {
+    if (status && status.usbdisk) send('usbdisk off');
+    else if (confirm("USB Drive: photos appear on this computer as a read-only drive.\nThe camera's serial logs and USB flashing pause until you disconnect (on the camera or here)."))
+      send('usbdisk on');
+  });
+  $('format').addEventListener('click', () => {
+    const typed = prompt('Format ERASES every photo and file on the card, including time-lapse folders. Type CONFIRM to continue:');
+    if (typed === 'CONFIRM') send('format CONFIRM');
   });
   $('tab-camera').addEventListener('click', () => showTab('camera'));
   $('tab-gallery').addEventListener('click', () => showTab('gallery'));

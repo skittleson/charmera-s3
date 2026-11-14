@@ -10,7 +10,8 @@
 /* Verification bar from the spec: a real FAT reader sees DCIM/IMG_*.JPG with byte-exact
    contents. No root here, so mtools stands in for a loop-mount; skipped when absent. */
 
-static uint8_t card[16000 * 512]; /* pretend SD card: 512-byte sectors at arbitrary spots */
+static uint8_t card[70000 * 512]; /* pretend SD card: 512-byte sectors at arbitrary spots */
+#define CARD_SECTORS (sizeof(card) / 512)
 
 #define OUT "/tmp/opencode/fat_image_lun.bin"
 
@@ -53,26 +54,28 @@ void tearDown(void) {}
 
 static void test_build_and_read_back(void)
 {
-    /* Pretend files on the card, clusters deliberately scattered and out of order. */
-    static const uint32_t c1[] = {1000};
-    static const uint32_t c2[] = {5000, 2000};
-    static const uint32_t c3[] = {9000};
+    /* Pretend files on the card, clusters deliberately scattered and out of order.
+       spc = 1 so each cluster is one sector; runs of 1 mark scattered placement. */
     fill_pattern(card + 1000 * 512, 1500, 1);
-    fill_pattern(card + 5000 * 512, 2048, 2);
-    fill_pattern(card + 2000 * 512, 952, 3);
-    fill_pattern(card + 9000 * 512, 100, 4);
+    fill_pattern(card + 5000 * 512, 512, 2);
+    fill_pattern(card + 2000 * 512, 512, 3);
+    fill_pattern(card + 2001 * 512, 476, 4); /* contiguous second cluster of file 2 */
+    fill_pattern(card + 9000 * 512, 100, 5);
 
+    /* run = (card_lba << 32 | clusters) */
+    static const uint64_t r1[] = {1000ull << 32 | 3};
+    static const uint64_t r2[] = {5000ull << 32 | 1, 2000ull << 32 | 2};
+    static const uint64_t r3[] = {9000ull << 32 | 1};
     fat_image_file_t files[3] = {
-        {"IMG_0001.JPG", 1500, c1, 1},
-        {"IMG_0002.JPG", 3000, c2, 2},
-        {"IMG_0002.THM", 100, c3, 1},
+        {"IMG_0001.JPG", 1500, r1, 1},
+        {"IMG_0002.JPG", 1500, r2, 2},
+        {"IMG_0002.THM", 100, r3, 1},
     };
     fat_image_t im;
-    TEST_ASSERT_TRUE(fat_image_build(files, 3, 4, &im)); /* 4 sectors/cluster = 2 KiB */
-    TEST_ASSERT_EQUAL_UINT16(4, im.spc);
-    TEST_ASSERT_NOT_NULL(im.image);
+    TEST_ASSERT_TRUE(fat_image_build(files, 3, 1, 32, 512, CARD_SECTORS, &im));
+    TEST_ASSERT_EQUAL_UINT16(1, im.spc);
+    TEST_ASSERT_NOT_NULL(im.boot);
     TEST_ASSERT_NOT_NULL(im.synth);
-    TEST_ASSERT_NOT_NULL(im.remap);
     write_lun(&im);
 
     /* Boot sector sanity via read_ram. */
@@ -81,11 +84,24 @@ static void test_build_and_read_back(void)
     TEST_ASSERT_EQUAL_HEX8(0x29, b[66]);             /* extended boot signature */
     TEST_ASSERT_EQUAL_MEMORY("FAT32   ", b + 82, 8); /* system ID */
     TEST_ASSERT_EQUAL_UINT16(512, b[11] | (b[12] << 8));
-    TEST_ASSERT_EQUAL_UINT16(4, b[13]);   /* sectors per cluster */
-    TEST_ASSERT_EQUAL_UINT16(2, b[16]);   /* two FATs */
+    TEST_ASSERT_EQUAL_UINT16(1, b[13]);    /* sectors per cluster */
+    TEST_ASSERT_EQUAL_UINT16(2, b[16]);    /* two FATs */
     TEST_ASSERT_EQUAL_UINT32(im.total_sectors, b[32] | (b[33] << 8) | (b[34] << 16) | ((uint32_t)b[35] << 24));
     TEST_ASSERT_EQUAL_HEX8(0x55, b[510]);
     TEST_ASSERT_EQUAL_HEX8(0xAA, b[511]);
+
+    /* FAT sectors beyond the first must hold their own entries (by sector*128),
+       not entries re-derived from sector 0. Clusters 128..255 are all padding
+       (free): every entry must be 0x0FFFFFFF. FAT #2 must match FAT #1. */
+    uint8_t b1[512], b2[512];
+    TEST_ASSERT_TRUE(im.fat_sectors > 1);
+    TEST_ASSERT_TRUE(fat_image_read_ram(&im, im.rsvd_sectors + 1, 1, b1));
+    for (int e = 0; e < 512 / 4; e++) {
+        uint32_t v = b1[e * 4] | (b1[e * 4 + 1] << 8) | (b1[e * 4 + 2] << 16) | ((uint32_t)b1[e * 4 + 3] << 24);
+        TEST_ASSERT_EQUAL_HEX32_MESSAGE(0x0FFFFFFFu, v, "FAT sector 1 must be all-free entries");
+    }
+    TEST_ASSERT_TRUE(fat_image_read_ram(&im, im.rsvd_sectors + im.fat_sectors + 1, 1, b2));
+    TEST_ASSERT_EQUAL_MEMORY(b1, b2, 512);
     fat_image_free(&im);
 }
 
@@ -120,7 +136,7 @@ static void test_mtools_reads_gallery(void)
     fill_pattern(want, sizeof(want), 1);
     TEST_ASSERT_EQUAL_MEMORY(want, got, 1500);
 
-    /* Second file spans two non-contiguous clusters: order must still be right. */
+    /* Second file spans a run break: order must still be right. */
     unlink("/tmp/opencode/fat_image_x2.jpg");
     rc = system("MTOOLS_SKIP_CHECK=1 mcopy -o -i " OUT " ::/DCIM/IMG_0002.JPG /tmp/opencode/fat_image_x2.jpg");
     TEST_ASSERT_EQUAL_INT(0, rc);
@@ -128,23 +144,25 @@ static void test_mtools_reads_gallery(void)
     TEST_ASSERT_NOT_NULL(f);
     n = fread(got, 1, sizeof(got), f);
     fclose(f);
-    TEST_ASSERT_EQUAL_UINT(3000, n);
-    uint8_t want2[3000];
-    memcpy(want2, card + 5000 * 512, 2048);
-    memcpy(want2 + 2048, card + 2000 * 512, 952);
-    TEST_ASSERT_EQUAL_MEMORY(want2, got, 3000);
+    TEST_ASSERT_EQUAL_UINT(1500, n);
+    uint8_t want2[1500];
+    memcpy(want2, card + 5000 * 512, 512);
+    memcpy(want2 + 512, card + 2000 * 512, 988);
+    TEST_ASSERT_EQUAL_MEMORY(want2, got, 1500);
 }
 
 static void test_build_rejects_bad_input(void)
 {
-    static const uint32_t none[1] = {0};
-    fat_image_file_t f = {"IMG_0001.JPG", 0, none, 0};
+    static const uint64_t r[] = {1000ull << 32 | 1};
+    fat_image_file_t f = {"IMG_0001.JPG", 0, r, 1};
     fat_image_t im;
-    TEST_ASSERT_FALSE(fat_image_build(&f, 1, 4, &im)); /* empty file */
-    fat_image_file_t g = {"IMG_00012.JPG", 100, none, 1};
-    TEST_ASSERT_FALSE(fat_image_build(&g, 1, 4, &im)); /* base longer than 8 */
-    fat_image_file_t ok = {"IMG_0001.JPG", 100, none, 1};
-    TEST_ASSERT_FALSE(fat_image_build(&ok, 1, 3, &im)); /* spc must be a power of two >= 1 */
+    TEST_ASSERT_FALSE(fat_image_build(&f, 1, 1, 32, 512, CARD_SECTORS, &im)); /* empty file */
+    fat_image_file_t g = {"IMG_00012.JPG", 100, r, 1};
+    TEST_ASSERT_FALSE(fat_image_build(&g, 1, 1, 32, 512, CARD_SECTORS, &im)); /* base longer than 8 */
+    fat_image_file_t ok = {"IMG_0001.JPG", 100, r, 1};
+    TEST_ASSERT_FALSE(fat_image_build(&ok, 1, 3, 32, 512, CARD_SECTORS, &im)); /* spc not power of two */
+    fat_image_file_t big = {"IMG_0001.JPG", 100u * 1024 * 1024, r, 1};
+    TEST_ASSERT_FALSE(fat_image_build(&big, 1, 1, 32, 512, CARD_SECTORS, &im)); /* runs shorter than size */
 }
 
 int main(void)

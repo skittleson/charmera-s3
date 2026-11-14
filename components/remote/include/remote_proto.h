@@ -67,6 +67,7 @@ typedef struct {
     bool clock_set;                  /* EXIF dates available (time was sent) */
     const char *orientation;         /* in effect: portrait / landscape-right / landscape-left */
     const char *orientation_setting; /* the setting: those, or auto */
+    bool usbdisk;                    /* read-only USB drive mode is active */
 } remote_status_t;
 
 /* Compact JSON. Returns its length, or 0 if it doesn't fit (never truncated). */

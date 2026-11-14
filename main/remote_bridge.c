@@ -247,6 +247,7 @@ void remote_bridge_publish(void)
     ui_camera_fill_status(&st);
     strlcpy(st.error, s_error, sizeof(st.error));
     st.clock_set = pipeline_clock_is_set();
+    st.usbdisk = usbdisk_is_active();
     static char json[512];
     if (remote_status_json(&st, json, sizeof(json))) {
         remote_publish(json, st.battery_pct);

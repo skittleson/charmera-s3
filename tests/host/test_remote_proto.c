@@ -180,7 +180,7 @@ static void test_status_json_fields(void)
                           "\"mode\":\"lapse\"", "\"interval\":1", "\"intervalName\":\"10 s\"", "\"running\":true",
                           "\"recording\":false", "\"frames\":12", "\"elapsed\":75", "\"folder\":\"101LAPSE\"",
                           "\"card\":\"ok\"", "\"busy\":false", "\"last\":\"IMG_0093\"", "\"error\":\"\"", "\"clock\":true",
-                          "\"orientation\":\"portrait\"", "\"orientationSetting\":\"auto\""};
+                          "\"orientation\":\"portrait\"", "\"orientationSetting\":\"auto\"", "\"usbdisk\":false"};
     for (size_t i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
         TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, want[i]), want[i]);
     }

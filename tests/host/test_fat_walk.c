@@ -8,7 +8,7 @@
 #include "unity.h"
 
 /* Walks real FAT16 and FAT32 images made by mkfs.fat (files planted with mcopy) and
-   checks names, sizes and cluster-sector lists round-trip. */
+   checks names, sizes and cluster-run backing round-trip. */
 
 #define LUN16 "/tmp/opencode/walk16.img"
 #define LUN32 "/tmp/opencode/walk32.img"
@@ -21,30 +21,13 @@ static bool read_cb(void *ctx, uint32_t lba, uint32_t count, uint8_t *buf)
     return fseek(lun, (long)lba * 512, SEEK_SET) == 0 && fread(buf, 512, count, lun) == count;
 }
 
-static void *alloc_cb(size_t size)
-{
-    return malloc(size);
-}
-
 typedef struct {
     char names[16][13];
     uint32_t sizes[16];
-    uint32_t first_clusters[16];
+    uint32_t first_lbas[16];
+    uint32_t total_clusters[16];
     int n;
 } acc_t;
-
-static bool collect(void *ctx, const fat_walk_entry_t *e)
-{
-    acc_t *a = (acc_t *)ctx;
-    if (a->n == 16) {
-        return false;
-    }
-    memcpy(a->names[a->n], e->name, 13);
-    a->sizes[a->n] = e->size;
-    a->first_clusters[a->n] = e->clusters[0];
-    a->n++;
-    return true;
-}
 
 static bool sh(const char *cmd)
 {
@@ -76,21 +59,47 @@ static void prepare_images(void)
     }
 }
 
+/* Accumulator where begin() advances the cursor: run_cb appends to the current file. */
+static bool beg2(void *ctx, const char *name, uint32_t size)
+{
+    acc_t *a = (acc_t *)ctx;
+    if (a->n == 16) {
+        return false;
+    }
+    a->n++;
+    memcpy(a->names[a->n - 1], name, 13);
+    a->sizes[a->n - 1] = size;
+    a->first_lbas[a->n - 1] = 0xFFFFFFFFu;
+    a->total_clusters[a->n - 1] = 0;
+    return true;
+}
+
+static void run2(void *ctx, uint32_t volume_lba, uint32_t clusters)
+{
+    acc_t *a = (acc_t *)ctx;
+    if (a->first_lbas[a->n - 1] == 0xFFFFFFFFu) {
+        a->first_lbas[a->n - 1] = volume_lba;
+    }
+    a->total_clusters[a->n - 1] += clusters;
+}
+
 static void walk_one(const char *img)
 {
     lun = fopen(img, "rb");
     TEST_ASSERT_NOT_NULL(lun);
     acc_t a; memset(&a, 0, sizeof(a));
-    TEST_ASSERT_TRUE(fat_walk(read_cb, NULL, alloc_cb, "DCIM/100CHARM", collect, &a));
+    TEST_ASSERT_TRUE(fat_walk(read_cb, NULL, "DCIM/100CHARM", beg2, run2, &a));
     TEST_ASSERT_EQUAL_INT(2, a.n);
     TEST_ASSERT_EQUAL_STRING("IMG_0001.JPG", a.names[0]);
     TEST_ASSERT_EQUAL_STRING("IMG_0002.JPG", a.names[1]);
     TEST_ASSERT_EQUAL_UINT32(5000, a.sizes[0]);
     TEST_ASSERT_EQUAL_UINT32(70000, a.sizes[1]);
+    TEST_ASSERT_TRUE(a.total_clusters[0] >= 1);   /* 5000 B over any cluster size */
+    TEST_ASSERT_TRUE(a.total_clusters[1] >= 7);
 
     /* The reported first cluster sector must actually hold the file's first bytes. */
     uint8_t sec[512];
-    fseek(lun, (long)a.first_clusters[0] * 512, SEEK_SET);
+    fseek(lun, (long)a.first_lbas[0] * 512, SEEK_SET);
     TEST_ASSERT_EQUAL_INT(512, (int)fread(sec, 1, 512, lun));
     uint8_t want[5000];
     FILE *f = fopen("/tmp/opencode/w_a.bin", "rb");
@@ -115,18 +124,19 @@ static void test_walk_missing_path(void)
 {
     lun = fopen(LUN32, "rb");
     acc_t a; memset(&a, 0, sizeof(a));
-    TEST_ASSERT_FALSE(fat_walk(read_cb, NULL, alloc_cb, "DCIM/NOPE", collect, &a));
-    TEST_ASSERT_FALSE(fat_walk(read_cb, NULL, alloc_cb, "NOSUCH", collect, &a));
+    TEST_ASSERT_FALSE(fat_walk(read_cb, NULL, "DCIM/NOPE", beg2, run2, &a));
+    TEST_ASSERT_FALSE(fat_walk(read_cb, NULL, "NOSUCH", beg2, run2, &a));
     fclose(lun);
 }
 
-static void test_walk_stops_when_cb_says_no(void)
+static void test_walk_stops_when_begin_refuses(void)
 {
-    /* DCIM (not 100CHARM) on a card with more files: first-entry stop. */
+    /* First begin() returns false: walk reports success with zero files. */
     lun = fopen(LUN32, "rb");
     acc_t a; memset(&a, 0, sizeof(a));
-    /* cb returns true but we limit to 16: just ensure empty dir walks fine */
-    TEST_ASSERT_TRUE(fat_walk(read_cb, NULL, alloc_cb, "DCIM", collect, &a));
+    a.n = 16; /* begin refuses immediately */
+    TEST_ASSERT_TRUE(fat_walk(read_cb, NULL, "DCIM/100CHARM", beg2, run2, &a));
+    TEST_ASSERT_EQUAL_INT(16, a.n);
     fclose(lun);
 }
 
@@ -141,6 +151,6 @@ int main(void)
     RUN_TEST(test_walk_fat16);
     RUN_TEST(test_walk_fat32);
     RUN_TEST(test_walk_missing_path);
-    RUN_TEST(test_walk_stops_when_cb_says_no);
+    RUN_TEST(test_walk_stops_when_begin_refuses);
     return UNITY_END();
 }
