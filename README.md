@@ -406,7 +406,7 @@ docs/         web app / PWA (index.html, app.js, sw.js), design, plans, acceptan
 
 - [ ] 🎬 Video recording — the design leaves room for a Video mode.
 - [ ] 🕒 Date stamp, with time set over Wi-Fi.
-- [ ] 💾 USB drive mode — copy photos without removing the card.
+- [x] 💾 USB drive mode — copy photos without removing the card. (Read-only `DCIM` over full-speed USB: expect ~80 KB/s, and the volume is sized to the gallery, not the card.)
 - [ ] 🌡️ OV5640 heat — a heat sink, then maybe a faster viewfinder again.
 - [ ] 📷 A photo of the finished camera for this README.
 - [ ] Smaller items from the final review, tracked in [`docs/build-decisions.md`](docs/build-decisions.md).
