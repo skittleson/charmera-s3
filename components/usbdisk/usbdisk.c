@@ -8,6 +8,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_private/usb_phy.h"
+#include "hal/usb_serial_jtag_hal.h"
 #include "tusb.h"
 
 #include "fat_image.h"
@@ -362,6 +363,7 @@ bool usbdisk_start(void)
         s_active = false;
         usb_del_phy(s_phy);
         s_phy = NULL;
+        usb_serial_jtag_hal_phy_set_external(NULL, false);
         goto give;
     }
     xTaskCreate(usb_task, "usbdisk", 4096, NULL, 6, &s_task);
@@ -388,8 +390,12 @@ void usbdisk_stop(void)
        USB-Serial-JTAG (esp_tinyusb's uninstall does exactly this). */
     if (s_phy) {
         usb_del_phy(s_phy);
-        s_phy = NULL; /* pads return to USB-Serial-JTAG: logs and flashing again */
+        s_phy = NULL;
     }
+    /* Re-arm the USB-Serial-JTAG pad: usb_del_phy disables the shared pads and
+       nothing else turns the USJ one back on (usb_new_phy took it via
+       usb_serial_jtag_hal_phy_set_external(..., true) on entry). */
+    usb_serial_jtag_hal_phy_set_external(NULL, false);
     fat_image_free(&s_img);
     free(s_files);
     s_files = NULL;
