@@ -16,6 +16,9 @@ int storage_next_photo_number(const char *const *names, size_t n);
 /* 42 -> "IMG_0042.JPG" */
 void storage_photo_name(int number, char out[13]);
 
+/* 42 -> "IMG_0042.AVI" (a video clip; same number space as photos) */
+void storage_clip_name(int number, char out[13]);
+
 /* free / avg. avg == 0 uses STORAGE_DEFAULT_PHOTO_BYTES. */
 uint32_t storage_photos_remaining(uint64_t free_bytes, uint32_t avg_photo_bytes);
 

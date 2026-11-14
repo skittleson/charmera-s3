@@ -47,6 +47,7 @@ Charmera's most common complaint: **you don't have to pick a mode every time you
 | 🔄 **Hold it any way** | Portrait, landscape either way round, or **Auto**, which turns the screen like a phone. Screen, viewfinder, frames, photos and gallery all follow. |
 | 👁️ **WYSIWYG viewfinder** | Live view and encoder share the same C code per look; host tests check they agree. |
 | ⏱️ **Time-lapse** | One photo every 5 s – 5 min, in its own card folder, ready to turn into video. Keeps shooting while the screen sleeps. |
+| 🎬 **Lo-fi video** | 320×240 MJPEG clips at ~8 fps, up to 10 s / 2 MB, with your look applied. Watch them back on the camera's screen. |
 | 📶 **Bluetooth web app** | An installable phone app: shoot, see each shot right after, list the card and download originals. |
 | 🖼️ **Gallery** | On the camera and in the app. Newest first. Step back through shots, delete one or all on the camera. |
 | 🏷️ **Full EXIF** | Camera, date/time, orientation, size, look, time-lapse run and frame. |
@@ -243,7 +244,7 @@ standard Battery Service:
 | Characteristic | UUID | |
 |---|---|---|
 | Status JSON | `c4a30001-…` | read / notify: `photos`, `left`, `battery`, `usb`, `camera`, `look`, `lookName`, `mode`, `interval`, `intervalName`, `running`, `frames`, `elapsed`, `folder`, `card`, `busy`, `last`, `error`, `clock`, `orientation`, `orientationSetting` |
-| Command | `c4a30002-…` | write text: `look <0-11>`, `mode single`, `mode lapse [0-4]`, `interval <0-4>`, `shoot`, `lapse start`, `lapse stop`, `time <unix seconds> [UTC offset minutes]`, `orientation <portrait\|landscape-right\|landscape-left\|auto>`, `list`, `thumb <n>`, `get <n>` |
+| Command | `c4a30002-…` | write text: `look <0-11>`, `mode single`, `mode lapse [0-4]`, `mode video`, `interval <0-4>`, `shoot`, `lapse start`, `lapse stop`, `time <unix seconds> [UTC offset minutes]`, `orientation <portrait\|landscape-right\|landscape-left\|auto>`, `list`, `thumb <n>`, `get <n>`  ·  in video mode, `shoot` records a clip and `lapse stop` ends it |
 | Info JSON | `c4a30003-…` | read: firmware version, look names, interval names |
 | Stream | `c4a30004-…` | notify: the reply to `list`, `thumb` and `get`, framed as below |
 
@@ -314,6 +315,7 @@ The full story, including every change of plan, is in
 | Format card | ⚠️ built, never run on a card |
 | Reading photos in a PC card reader | ⚠️ files checked over USB serial instead |
 | Time-lapse at 10 s and 30 s (frames, sensor sleep, stop) | ✅ yes |
+| Lo-fi video: record/stop, MJPEG clips, gallery playback | ✅ yes |
 | Bluetooth remote: every command from a PC (26 checks, incl. list / thumbnail / refused download) and the web app in Chrome (17 checks, incl. preview after shot and gallery) | ✅ yes |
 | Full EXIF and clock-from-remote | ✅ yes: a photo downloaded from the board over Bluetooth, checked with ExifTool |
 | Full-size download over Bluetooth | ✅ yes: an 803 KB original, byte count matched, ~5–8 kB/s |

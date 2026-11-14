@@ -10,6 +10,8 @@ static void test_parse(void)
 {
     TEST_ASSERT_EQUAL(42, storage_parse_photo_number("IMG_0042.JPG"));
     TEST_ASSERT_EQUAL(7, storage_parse_photo_number("img_0007.jpg"));
+    TEST_ASSERT_EQUAL(42, storage_parse_photo_number("IMG_0042.AVI")); /* a clip shares the number space */
+    TEST_ASSERT_EQUAL(7, storage_parse_photo_number("img_0007.avi"));
     TEST_ASSERT_EQUAL(-1, storage_parse_photo_number("IMG_0042.TMP"));
     TEST_ASSERT_EQUAL(-1, storage_parse_photo_number("DSC_0001.JPG"));
     TEST_ASSERT_EQUAL(-1, storage_parse_photo_number("IMG_42.JPG"));
@@ -49,6 +51,21 @@ static void test_name(void)
     TEST_ASSERT_EQUAL_STRING("IMG_0042.JPG", b);
     storage_photo_name(9999, b);
     TEST_ASSERT_EQUAL_STRING("IMG_9999.JPG", b);
+}
+
+static void test_clip_name(void)
+{
+    char b[13];
+    storage_clip_name(42, b);
+    TEST_ASSERT_EQUAL_STRING("IMG_0042.AVI", b);
+    storage_clip_name(1, b);
+    TEST_ASSERT_EQUAL_STRING("IMG_0001.AVI", b);
+}
+
+static void test_next_number_counts_clips(void)
+{
+    const char *n[] = {"IMG_0003.JPG", "IMG_0010.AVI"};
+    TEST_ASSERT_EQUAL(11, storage_next_photo_number(n, 2));
 }
 
 static void test_remaining(void)
@@ -108,6 +125,8 @@ int main(void)
     RUN_TEST(test_next_number_gap_uses_max);
     RUN_TEST(test_next_number_exhausted);
     RUN_TEST(test_name);
+    RUN_TEST(test_clip_name);
+    RUN_TEST(test_next_number_counts_clips);
     RUN_TEST(test_remaining);
     RUN_TEST(test_remaining_zero_when_free_below_estimate);
     RUN_TEST(test_parse_folder);

@@ -52,6 +52,11 @@ uint8_t *pipeline_scratch(size_t *len);
    bytes). Returns the encoded size, 0 on failure. Used for the .THM sidecars. */
 size_t pipeline_encode_thumb_jpeg(const uint16_t *rgb565, int w, int h, uint8_t *out, size_t cap);
 
+/* Encode an upright RGB565 frame (w x h) with `look` applied as a full-size JPEG into
+   out (cap bytes). Returns the encoded size, 0 on failure. Used for video frames; reuses
+   the pipeline's PSRAM encoder output (s_obuf), so no new internal-RAM buffers. */
+size_t pipeline_encode_video_jpeg(const uint16_t *rgb565, int w, int h, look_t look, uint8_t *out, size_t cap);
+
 /* Encode the shutter thumbnail for `number` and write its .THM sidecar. Best effort:
    absent sidecars simply make the remote list that photo without a preview. */
 void pipeline_thumb_sidecar(int number, const uint16_t *thumb, int w, int h);

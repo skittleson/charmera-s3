@@ -10,12 +10,14 @@ int storage_parse_photo_number(const char *name)
         return -1;
     }
     static const char prefix[] = "IMG_";
-    static const char suffix[] = ".JPG";
     for (int i = 0; i < 4; i++) {
-        if (toupper((unsigned char)name[i]) != prefix[i] ||
-            toupper((unsigned char)name[8 + i]) != suffix[i]) {
+        if (toupper((unsigned char)name[i]) != prefix[i]) {
             return -1;
         }
+    }
+    /* Photos are .JPG, clips are .AVI; both share the IMG_%04d number space. */
+    if (strcasecmp(name + 8, ".JPG") != 0 && strcasecmp(name + 8, ".AVI") != 0) {
+        return -1;
     }
     int n = 0;
     for (int i = 4; i < 8; i++) {
@@ -42,6 +44,11 @@ int storage_next_photo_number(const char *const *names, size_t n)
 void storage_photo_name(int number, char out[13])
 {
     snprintf(out, 13, "IMG_%04d.JPG", number);
+}
+
+void storage_clip_name(int number, char out[13])
+{
+    snprintf(out, 13, "IMG_%04d.AVI", number);
 }
 
 uint32_t storage_photos_remaining(uint64_t free_bytes, uint32_t avg_photo_bytes)

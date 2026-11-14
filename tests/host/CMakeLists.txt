@@ -32,7 +32,8 @@ function(add_host_test name)
         ${REPO}/components/remote/include
         ${REPO}/components/pipeline/include
         ${REPO}/components/orient/include
-        ${REPO}/components/looks/include)
+        ${REPO}/components/looks/include
+        ${REPO}/components/video/include)
     target_compile_options(test_${name} PRIVATE -Wall -Wextra -Werror)
     target_link_libraries(test_${name} PRIVATE unity m)
     add_test(NAME ${name} COMMAND test_${name})
@@ -51,3 +52,4 @@ add_host_test(exif ${REPO}/components/pipeline/src/exif.c)
 add_host_test(orient ${REPO}/components/orient/orient.c)
 add_host_test(preview_fit ${REPO}/main/logic/preview_fit.c)
 target_include_directories(test_preview_fit PRIVATE ${REPO}/main/logic)
+add_host_test(avi_writer ${REPO}/components/video/avi_writer.c)

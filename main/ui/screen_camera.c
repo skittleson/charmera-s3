@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "avi_writer.h"
 #include "board.h"
 #include "camera.h"
 #include "display.h"
@@ -38,7 +39,14 @@ static lv_image_dsc_t s_dsc = {
 /* Consecutive failed frames before a time-lapse gives up. */
 #define LAPSE_MAX_FAILS 3
 
+/* Video: 320x240 @ 8 fps, up to 10 s or ~2 MB, whichever comes first. */
+#define VIDEO_FPS       8
+#define VIDEO_FRAME_MS  (1000 / VIDEO_FPS)
+#define VIDEO_MAX_MS    (10 * 1000)
+#define VIDEO_MAX_BYTES (2u * 1024 * 1024)
+
 typedef enum { LAPSE_OFF, LAPSE_ARMED, LAPSE_RUNNING } lapse_mode_t;
+typedef enum { VIDEO_OFF, VIDEO_ARMED, VIDEO_RECORDING } video_mode_t;
 
 static struct {
     lv_obj_t *img, *flash, *look, *remaining, *battery, *banner, *status, *hint, *level, *badge;
@@ -56,6 +64,16 @@ static struct {
         int64_t start_ms, due_ms;
         char folder[9];
     } lapse;
+    struct {
+        video_mode_t mode;
+        FILE *f;
+        avi_writer_t w;
+        uint8_t *jpeg; /* one encoded frame (PSRAM) */
+        int number;
+        uint32_t frames, bytes;
+        int fails;
+        int64_t start_ms, due_ms;
+    } video;
 } s;
 
 /* Last saved file, for the Bluetooth status; survives screen changes. */
@@ -150,9 +168,11 @@ static void enter(lv_obj_t *scr)
     ui_camera_reserve();
     const bool turning = ui_is_relayout();
     const __typeof__(s.lapse) keep_lapse = s.lapse;
+    const __typeof__(s.video) keep_video = s.video;
     memset(&s, 0, sizeof(s));
     if (turning) {
         s.lapse = keep_lapse; /* a rebuild for the new orientation keeps the mode */
+        s.video = keep_video; /* and a recording clip keeps going (its FILE* stays open) */
     }
     s.current = settings_look(); /* every look change is saved, so this survives a turn */
     s.lapse.interval = settings_lapse_interval();
@@ -212,12 +232,17 @@ static void enter(lv_obj_t *scr)
 }
 
 static void lapse_stop(const char *why);
+static void video_stop(const char *why);
 
 static void leave(void)
 {
     if (ui_is_relayout()) {
         return; /* just turning: keep the mode, the armed time-lapse and the sensor on */
     }
+    if (s.video.mode == VIDEO_RECORDING) {
+        video_stop(NULL); /* leaving the screen saves the clip */
+    }
+    s.video.mode = VIDEO_OFF;
     if (s.lapse.mode == LAPSE_RUNNING) {
         lapse_stop(NULL);
     }
@@ -370,10 +395,27 @@ static bool lapse_sensor_sleeps(void)
     return s.lapse.mode == LAPSE_RUNNING && lapse_interval_ms(s.lapse.interval) >= LAPSE_SENSOR_SLEEP_MS;
 }
 
-/* Badge and hint for the current mode. Display lock held. */
+/* Badge and hint for the current mode (time-lapse or video). Display lock held. */
 static void lapse_paint(void)
 {
     char t[64];
+    if (s.video.mode == VIDEO_RECORDING) {
+        const int64_t now = now_ms();
+        char run[16];
+        lapse_format_duration((uint32_t)((now - s.video.start_ms) / 1000), run, sizeof(run));
+        snprintf(t, sizeof(t), "REC  %s  %u kB", run, (unsigned)(s.video.bytes / 1024));
+        lv_label_set_text(s.hint, HINT_RUN);
+        lv_label_set_text(s.badge, t);
+        lv_obj_set_hidden(s.badge, false);
+        return;
+    }
+    if (s.video.mode == VIDEO_ARMED) {
+        snprintf(t, sizeof(t), "VIDEO  %d fps", VIDEO_FPS);
+        lv_label_set_text(s.hint, HINT_ARMED);
+        lv_label_set_text(s.badge, t);
+        lv_obj_set_hidden(s.badge, false);
+        return;
+    }
     switch (s.lapse.mode) {
     case LAPSE_OFF:
         lv_obj_set_hidden(s.badge, true);
@@ -493,6 +535,124 @@ static void lapse_frame(void)
     remote_bridge_publish();
 }
 
+/* ---------- video ---------- */
+
+#define VIDEO_JPEG_CAP (128 * 1024)
+
+/* Select video mode: one clip per shutter, armed and ready. Clears the other modes. */
+static void select_video(void)
+{
+    s.lapse.mode = LAPSE_OFF;
+    s.video.mode = VIDEO_ARMED;
+    lapse_repaint();
+}
+
+static void video_start(void)
+{
+    if (storage_status() != STORAGE_OK) {
+        ui_toast("No card", 1500);
+        return;
+    }
+    if (!storage_numbers_left() || storage_photos_remaining_now() == 0) {
+        ui_toast("Card full", 1500);
+        return;
+    }
+    int number = 0;
+    FILE *f = storage_video_begin(&number);
+    if (!f) {
+        ui_toast("Can't start video", 2500);
+        return;
+    }
+    if (!s.video.jpeg) {
+        s.video.jpeg = heap_caps_malloc(VIDEO_JPEG_CAP, MALLOC_CAP_SPIRAM);
+    }
+    const int w = camera_preview_w(), h = camera_preview_h();
+    if (!s.video.jpeg || !avi_writer_open(&s.video.w, f, w, h)) {
+        fclose(f);
+        storage_video_abort(number);
+        ui_toast("Can't start video", 2500);
+        return;
+    }
+    s.video.mode = VIDEO_RECORDING;
+    s.video.number = number;
+    s.video.frames = 0;
+    s.video.bytes = 0;
+    s.video.fails = 0;
+    s.video.start_ms = s.video.due_ms = now_ms(); /* first frame on the next tick */
+    ESP_LOGI(TAG, "video start: %dx%d @%d fps into IMG_%04d.AVI", w, h, VIDEO_FPS, number);
+    lapse_repaint();
+}
+
+/* End the clip. why == NULL: stopped by the user or the cap (or by leaving the screen). */
+static void video_stop(const char *why)
+{
+    if (s.video.mode != VIDEO_RECORDING) {
+        return;
+    }
+    const bool ok = avi_writer_close(&s.video.w); /* patches the header and closes the file */
+    s.video.f = NULL;
+    if (ok && storage_video_commit(s.video.number) == ESP_OK) {
+        snprintf(s_last, sizeof(s_last), "IMG_%04d", s.video.number);
+        char t[80];
+        snprintf(t, sizeof(t), "%s%u frames saved\nIMG_%04d.AVI", why ? why : "", (unsigned)s.video.frames,
+                 s.video.number);
+        ui_toast(t, 3000);
+    } else {
+        storage_video_abort(s.video.number); /* a failed clip leaves no gallery entry */
+        ui_toast(why ? why : "Clip discarded", 2500);
+    }
+    s.video.mode = VIDEO_ARMED; /* stay ready for another clip */
+    lapse_repaint();
+}
+
+static void video_frame(void)
+{
+    s.busy = true;
+    remote_bridge_publish();
+    uint16_t *f = camera_preview_frame();
+    if (!f) {
+        s.busy = false;
+        if (++s.video.fails >= LAPSE_MAX_FAILS) {
+            video_stop("camera error");
+        }
+        return;
+    }
+    const size_t len = pipeline_encode_video_jpeg(f, camera_preview_w(), camera_preview_h(), s.current,
+                                                  s.video.jpeg, VIDEO_JPEG_CAP);
+    if (!len) {
+        s.busy = false;
+        ESP_LOGW(TAG, "video frame encode failed");
+        if (++s.video.fails >= LAPSE_MAX_FAILS) {
+            video_stop("encode failed");
+        }
+        return;
+    }
+    if (!avi_writer_frame(&s.video.w, s.video.jpeg, len)) {
+        s.busy = false;
+        video_stop("write failed");
+        return;
+    }
+    s.video.frames++;
+    s.video.bytes += (uint32_t)len;
+    s.video.fails = 0;
+    s.busy = false;
+    const int64_t elapsed = now_ms() - s.video.start_ms;
+    if (elapsed >= VIDEO_MAX_MS || s.video.bytes >= VIDEO_MAX_BYTES) {
+        video_stop(NULL); /* hit the cap: save what we have */
+        return;
+    }
+    s.video.due_ms = now_ms() + VIDEO_FRAME_MS;
+    lapse_repaint();
+    remote_bridge_publish();
+}
+
+static void on_video_stop_confirm(int yes)
+{
+    if (yes) {
+        video_stop(NULL);
+    }
+}
+
 static void on_stop_confirm(int yes)
 {
     if (yes) {
@@ -508,6 +668,7 @@ static void on_interval(int index)
     settings_set_lapse_interval(index);
     s.lapse.interval = index;
     s.lapse.mode = LAPSE_ARMED;
+    s.video.mode = VIDEO_OFF; /* the modes are mutually exclusive */
     lapse_repaint();
 }
 
@@ -546,18 +707,20 @@ static void open_looks(void)
 
 static void on_menu(int index)
 {
-    if (s.lapse.mode == LAPSE_RUNNING) {
+    if (s.lapse.mode == LAPSE_RUNNING || s.video.mode == VIDEO_RECORDING) {
         return; /* a run started (remotely) while the menu was open */
     }
     switch (index) {
     case 0:
-        s.lapse.mode = LAPSE_OFF; /* plain photos */
+        s.lapse.mode = LAPSE_OFF;
+        s.video.mode = VIDEO_OFF; /* plain photos */
         lapse_repaint();
         break;
     case 1: open_looks(); break;
     case 2: open_intervals(); break;
-    case 3: ui_show(UI_SCREEN_GALLERY); break;
-    case 4: ui_show(UI_SCREEN_SETTINGS); break;
+    case 3: select_video(); break;
+    case 4: ui_show(UI_SCREEN_GALLERY); break;
+    case 5: ui_show(UI_SCREEN_SETTINGS); break;
     default: break;
     }
 }
@@ -565,6 +728,13 @@ static void on_menu(int index)
 static void event(input_event_t e)
 {
     if (s.busy) {
+        return;
+    }
+    if (s.video.mode == VIDEO_RECORDING) {
+        /* A bump shouldn't end a clip: always ask, Cancel first. */
+        if (e == INPUT_SHORT || e == INPUT_LONG) {
+            ui_confirm("Stop video?", "Stop", on_video_stop_confirm);
+        }
         return;
     }
     if (s.lapse.mode == LAPSE_RUNNING) {
@@ -576,15 +746,17 @@ static void event(input_event_t e)
     }
     switch (e) {
     case INPUT_SHORT:
-        if (s.lapse.mode == LAPSE_ARMED) {
+        if (s.video.mode == VIDEO_ARMED) {
+            video_start();
+        } else if (s.lapse.mode == LAPSE_ARMED) {
             lapse_start();
         } else {
             shoot();
         }
         break;
     case INPUT_LONG: {
-        static const char *const items[] = {"Camera", "Looks", "Time-lapse", "Gallery", "Settings"};
-        ui_menu_open("Menu", items, 5, 1, on_menu);
+        static const char *const items[] = {"Camera", "Looks", "Time-lapse", "Video", "Gallery", "Settings"};
+        ui_menu_open("Menu", items, 6, 1, on_menu);
         break;
     }
     default:
@@ -608,8 +780,19 @@ static void tick(void)
     }
     /* Auto orientation: only here on the camera screen, and never mid-save, during a
        time-lapse run (its frames must match), with a menu open or the screen asleep. */
-    orientation_auto_poll(s.busy || s.lapse.mode == LAPSE_RUNNING || ui_menu_is_open() || power_is_asleep());
-    if (s.lapse.mode == LAPSE_RUNNING && !s.busy) {
+    orientation_auto_poll(s.busy || s.lapse.mode == LAPSE_RUNNING || s.video.mode == VIDEO_RECORDING ||
+                          ui_menu_is_open() || power_is_asleep());
+    if (s.video.mode == VIDEO_RECORDING && !s.busy) {
+        if (now_ms() >= s.video.due_ms) {
+            video_frame(); /* keeps recording while the screen sleeps or a dialog is open */
+        } else {
+            static int64_t next_paint;
+            if (now >= next_paint) {
+                next_paint = now + 1000 * 1000;
+                lapse_repaint();
+            }
+        }
+    } else if (s.lapse.mode == LAPSE_RUNNING && !s.busy) {
         if (now_ms() >= s.lapse.due_ms) {
             lapse_frame(); /* keeps shooting while the screen sleeps or a dialog is open */
         } else {
@@ -636,7 +819,9 @@ void ui_camera_freeze(bool on)
 
 const char *ui_camera_remote(const remote_cmd_t *c)
 {
-    const char *err = remote_check(c, s.lapse.mode == LAPSE_RUNNING);
+    const remote_run_t run = s.video.mode == VIDEO_RECORDING ? RUN_VIDEO
+                        : s.lapse.mode == LAPSE_RUNNING ? RUN_LAPSE : RUN_NONE;
+    const char *err = remote_check(c, run);
     if (err) {
         return err;
     }
@@ -650,10 +835,14 @@ const char *ui_camera_remote(const remote_cmd_t *c)
         break;
     case RC_MODE_SINGLE:
         s.lapse.mode = LAPSE_OFF;
+        s.video.mode = VIDEO_OFF;
         lapse_repaint();
         break;
     case RC_MODE_LAPSE:
         on_interval(c->arg >= 0 ? c->arg : s.lapse.interval);
+        break;
+    case RC_MODE_VIDEO:
+        select_video();
         break;
     case RC_INTERVAL:
         settings_set_lapse_interval(c->arg);
@@ -661,6 +850,10 @@ const char *ui_camera_remote(const remote_cmd_t *c)
         lapse_repaint();
         break;
     case RC_SHOOT:
+        if (s.video.mode == VIDEO_ARMED) {
+            video_start(); /* the shutter starts a clip in video mode */
+            return s.video.mode == VIDEO_RECORDING ? NULL : "couldn't start";
+        }
         if (storage_status() != STORAGE_OK) {
             return "no card";
         }
@@ -685,7 +878,11 @@ const char *ui_camera_remote(const remote_cmd_t *c)
         }
         break;
     case RC_LAPSE_STOP:
-        lapse_stop(NULL); /* the page asked for confirmation already */
+        if (s.video.mode == VIDEO_RECORDING) {
+            video_stop(NULL); /* "lapse stop" is the generic stop: it ends a clip too */
+        } else {
+            lapse_stop(NULL); /* the page asked for confirmation already */
+        }
         break;
     case RC_TIME:
         break; /* handled by the bridge */
@@ -702,10 +899,15 @@ void ui_camera_fill_status(remote_status_t *st)
     st->look = settings_look();
     st->look_name = look_name(settings_look());
     st->lapse_mode = s.lapse.mode != LAPSE_OFF;
+    st->video_mode = s.video.mode != VIDEO_OFF;
     st->interval = settings_lapse_interval();
     st->interval_name = lapse_interval_name(st->interval);
     st->lapse_running = s.lapse.mode == LAPSE_RUNNING;
-    if (st->lapse_running) {
+    st->video_recording = s.video.mode == VIDEO_RECORDING;
+    if (st->video_recording) {
+        st->frames = s.video.frames;
+        st->elapsed_s = (uint32_t)((now_ms() - s.video.start_ms) / 1000);
+    } else if (st->lapse_running) {
         st->frames = s.lapse.frames;
         st->elapsed_s = (uint32_t)((now_ms() - s.lapse.start_ms) / 1000);
     }
