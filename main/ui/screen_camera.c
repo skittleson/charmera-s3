@@ -829,6 +829,8 @@ const char *ui_camera_remote(const remote_cmd_t *c)
     case RC_LIST: /* file service: handled by the bridge, never reaches here */
     case RC_THUMB:
     case RC_GET:
+    case RC_USBDISK: /* drive mode and format: handled by the bridge */
+    case RC_FORMAT:
         return NULL;
     case RC_LOOK:
         on_look(c->arg);

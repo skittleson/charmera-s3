@@ -5,7 +5,7 @@
 #include "input.h"
 #include "lvgl.h"
 
-typedef enum { UI_SCREEN_CAMERA, UI_SCREEN_GALLERY, UI_SCREEN_SETTINGS } ui_screen_id_t;
+typedef enum { UI_SCREEN_CAMERA, UI_SCREEN_GALLERY, UI_SCREEN_SETTINGS, UI_SCREEN_USB } ui_screen_id_t;
 
 typedef struct {
     void (*enter)(lv_obj_t *scr); /* build widgets on a fresh screen (display lock held) */
@@ -23,6 +23,7 @@ void ui_camera_wake(void);
 extern const ui_screen_t ui_camera_screen;
 extern const ui_screen_t ui_gallery_screen;
 extern const ui_screen_t ui_settings_screen;
+extern const ui_screen_t ui_usb_screen;
 
 /* Allocate the screens' long-lived buffers. Call at boot before camera_init() so they
    don't fragment the PSRAM the camera's full-res frame needs. */

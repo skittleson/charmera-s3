@@ -11,10 +11,11 @@
 #include "settings.h"
 #include "storage.h"
 #include "ui.h"
+#include "usbdisk.h"
 
 static const char *TAG = "ui_settings";
 
-enum { ROW_BRIGHTNESS, ROW_LEVEL, ROW_ORIENTATION, ROW_BLUETOOTH, ROW_FORMAT, ROW_BACK, ROW_COUNT };
+enum { ROW_BRIGHTNESS, ROW_LEVEL, ROW_ORIENTATION, ROW_BLUETOOTH, ROW_USBDISK, ROW_FORMAT, ROW_BACK, ROW_COUNT };
 
 static struct {
     lv_obj_t *info;
@@ -74,6 +75,7 @@ static void paint(void)
         "Orientation  Portrait", "Orientation  USB-C right", "Orientation  USB-C left", "Orientation  Auto"};
     lv_label_set_text(s.rows[ROW_ORIENTATION], ORIENT_LABELS[settings_orientation()]);
     lv_label_set_text(s.rows[ROW_BLUETOOTH], settings_bluetooth() ? "Bluetooth  On" : "Bluetooth  Off");
+    lv_label_set_text(s.rows[ROW_USBDISK], "USB Drive");
     lv_label_set_text(s.rows[ROW_FORMAT], storage_status() == STORAGE_OK ? "Format card" : "Format card (no card)");
     lv_label_set_text(s.rows[ROW_BACK], "Back to camera");
     for (int i = 0; i < ROW_COUNT; i++) {
@@ -174,6 +176,17 @@ static void activate(void)
         remote_bridge_set_enabled(settings_bluetooth());
         ui_toast(settings_bluetooth() ? "Bluetooth on" : "Bluetooth off", 1200);
         break;
+    case ROW_USBDISK: {
+        const char *reason = NULL;
+        if (!usbdisk_can_start(&reason)) {
+            ui_toast(reason, 1500);
+        } else if (usbdisk_start()) {
+            ui_show(UI_SCREEN_USB);
+        } else {
+            ui_toast("USB drive failed", 1500);
+        }
+        break;
+    }
     case ROW_FORMAT:
         if (storage_status() == STORAGE_OK) {
             ui_confirm("This erases every photo and file on the card. Format?", "Format", on_format);

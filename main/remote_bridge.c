@@ -15,6 +15,7 @@
 #include "settings.h"
 #include "storage.h"
 #include "ui.h"
+#include "usbdisk.h"
 
 static const char *TAG = "bridge";
 
@@ -278,6 +279,42 @@ void remote_bridge_poll(void)
         const char *err = c.kind == RC_LIST ? stream_list() : stream_photo(c.arg, c.kind == RC_THUMB);
         if (err) {
             remote_stream_error(err);
+            strlcpy(s_error, err, sizeof(s_error));
+        } else if (!rejected[0]) {
+            s_error[0] = '\0';
+        }
+        now_please = true;
+    } else if (got && (c.kind == RC_USBDISK || c.kind == RC_FORMAT)) {
+        /* Drive mode and format: gated here (screen-independent), gated by
+           nothing else can touch the card while we hand it to USB. */
+        remote_status_t g = {0};
+        ui_camera_fill_status(&g);
+        const bool busy_run = g.lapse_running || g.video_recording || g.busy;
+        const char *err = NULL;
+        if (c.kind == RC_FORMAT) {
+            if (usbdisk_is_active()) {
+                err = "usb drive on";
+            } else if (busy_run) {
+                err = g.lapse_running ? "time-lapse running" : g.video_recording ? "recording" : "busy";
+            } else if (storage_status() != STORAGE_OK) {
+                err = "no card";
+            } else if (storage_format() != ESP_OK) {
+                err = "format failed";
+            } else {
+                s_cache.at = 0;
+            }
+        } else if (c.arg == 1) {
+            if (busy_run) {
+                err = g.lapse_running ? "time-lapse running" : g.video_recording ? "recording" : "busy";
+            } else if (!usbdisk_start()) {
+                err = "usb drive failed";
+            } else {
+                ui_show_now(UI_SCREEN_USB);
+            }
+        } else {
+            usbdisk_stop(); /* the USB screen's tick returns to camera when showing */
+        }
+        if (err) {
             strlcpy(s_error, err, sizeof(s_error));
         } else if (!rejected[0]) {
             s_error[0] = '\0';

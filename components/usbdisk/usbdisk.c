@@ -102,6 +102,22 @@ int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t *
     return -1; /* read-only */
 }
 
+bool tud_msc_test_unit_ready_cb(uint8_t lun)
+{
+    (void)lun;
+    return s_active;
+}
+
+/* Vendor/builtin-overflow SCSI: nothing else is supported on a read-only LUN. */
+int32_t tud_msc_scsi_cb(uint8_t lun, uint8_t const scsi_cmd[16], void *buffer, uint16_t bufsize)
+{
+    (void)scsi_cmd;
+    (void)buffer;
+    (void)bufsize;
+    tud_msc_set_sense(lun, SCSI_SENSE_ILLEGAL_REQUEST, 0x20, 0x00);
+    return -1;
+}
+
 void tud_mount_cb(void)
 {
 }

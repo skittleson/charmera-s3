@@ -116,6 +116,24 @@ static void test_parse_file_service(void)
     TEST_ASSERT_EQUAL_STRING("unknown command", parse_err("thumb"));
 }
 
+static void test_parse_usbdisk_and_format(void)
+{
+    remote_cmd_t c = parse_ok("usbdisk on");
+    TEST_ASSERT_EQUAL(RC_USBDISK, c.kind);
+    TEST_ASSERT_EQUAL(1, c.arg);
+    c = parse_ok("USBDISK OFF");
+    TEST_ASSERT_EQUAL(RC_USBDISK, c.kind);
+    TEST_ASSERT_EQUAL(0, c.arg);
+    TEST_ASSERT_EQUAL_STRING("unknown command", parse_err("usbdisk"));
+    TEST_ASSERT_EQUAL_STRING("unknown command", parse_err("usbdisk toggle"));
+    /* format needs the literal second word; anything else refuses. */
+    c = parse_ok("format CONFIRM");
+    TEST_ASSERT_EQUAL(RC_FORMAT, c.kind);
+    TEST_ASSERT_EQUAL_STRING("type CONFIRM", parse_err("format"));
+    TEST_ASSERT_EQUAL_STRING("type CONFIRM", parse_err("format yes"));
+    TEST_ASSERT_EQUAL_STRING("type CONFIRM", parse_err("format CONFIRM x"));
+}
+
 static void test_check_refuses_changes_while_running(void)
 {
     const remote_cmd_kind_t refused[] = {RC_LOOK,       RC_MODE_SINGLE, RC_MODE_LAPSE, RC_MODE_VIDEO,
@@ -220,6 +238,7 @@ int main(void)
     RUN_TEST(test_parse_time);
     RUN_TEST(test_parse_orientation);
     RUN_TEST(test_parse_file_service);
+    RUN_TEST(test_parse_usbdisk_and_format);
     RUN_TEST(test_check_refuses_changes_while_running);
     RUN_TEST(test_status_json_fields);
     RUN_TEST(test_status_json_escapes_quotes);

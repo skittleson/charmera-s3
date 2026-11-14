@@ -21,6 +21,8 @@ typedef enum {
     RC_LIST,        /* list -> photo numbers and sizes as JSON (via Status) */
     RC_THUMB,       /* thumb <n> -> stream the .THM sidecar (arg = photo number) */
     RC_GET,         /* get <n> -> stream the full JPEG (arg = photo number) */
+    RC_USBDISK,     /* usbdisk on|off (arg 1/0) */
+    RC_FORMAT,      /* format CONFIRM -> full FAT format of the card */
 } remote_cmd_kind_t;
 
 /* Which run is active: none, a time-lapse, or a video clip. */

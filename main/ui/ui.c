@@ -17,6 +17,7 @@ static const ui_screen_t *const SCREENS[] = {
     [UI_SCREEN_CAMERA] = &ui_camera_screen,
     [UI_SCREEN_GALLERY] = &ui_gallery_screen,
     [UI_SCREEN_SETTINGS] = &ui_settings_screen,
+    [UI_SCREEN_USB] = &ui_usb_screen,
 };
 
 static const ui_screen_t *s_current;

@@ -128,6 +128,26 @@ const char *remote_parse(const char *text, size_t len, int look_count, int inter
         out->kind = RC_LIST;
         return NULL;
     }
+    if (strcmp(w[0], "usbdisk") == 0 && n == 2) {
+        if (strcmp(w[1], "on") == 0) {
+            out->kind = RC_USBDISK;
+            out->arg = 1;
+            return NULL;
+        }
+        if (strcmp(w[1], "off") == 0) {
+            out->kind = RC_USBDISK;
+            out->arg = 0;
+            return NULL;
+        }
+        return "unknown command";
+    }
+    if (strcmp(w[0], "format") == 0) {
+        if (n != 2 || strcmp(w[1], "confirm") != 0) {
+            return "type CONFIRM";
+        }
+        out->kind = RC_FORMAT;
+        return NULL;
+    }
     if ((strcmp(w[0], "thumb") == 0 || strcmp(w[0], "get") == 0) && n == 2) {
         char *end;
         const long v = strtol(w[1], &end, 10);
