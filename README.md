@@ -429,5 +429,3 @@ Please run the host tests before opening a pull request.
 
 > This is an independent hobby project inspired by the Kodak Charmera's user experience. It isn't
 > affiliated with Kodak or RETO, and the frame artwork is original.
-
-## 🙏 Acknowledgements
