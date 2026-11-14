@@ -636,7 +636,8 @@ void ui_camera_freeze(bool on)
 
 const char *ui_camera_remote(const remote_cmd_t *c)
 {
-    const char *err = remote_check(c, s.lapse.mode == LAPSE_RUNNING);
+    const remote_run_t run = s.lapse.mode == LAPSE_RUNNING ? RUN_LAPSE : RUN_NONE;
+    const char *err = remote_check(c, run);
     if (err) {
         return err;
     }

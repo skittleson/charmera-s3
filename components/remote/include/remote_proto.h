@@ -11,16 +11,20 @@ typedef enum {
     RC_LOOK,        /* look <n> */
     RC_MODE_SINGLE, /* mode single */
     RC_MODE_LAPSE,  /* mode lapse [n] */
+    RC_MODE_VIDEO,  /* mode video */
     RC_INTERVAL,    /* interval <n> */
     RC_SHOOT,       /* shoot */
     RC_LAPSE_START, /* lapse start */
-    RC_LAPSE_STOP,  /* lapse stop */
+    RC_LAPSE_STOP,  /* lapse stop (also stops a video clip: the generic "stop the run") */
     RC_TIME,        /* time <unix seconds> [utc offset minutes] */
     RC_ORIENTATION, /* orientation <portrait|landscape-right|landscape-left|auto> -> arg 0..3 */
     RC_LIST,        /* list -> photo numbers and sizes as JSON (via Status) */
     RC_THUMB,       /* thumb <n> -> stream the .THM sidecar (arg = photo number) */
     RC_GET,         /* get <n> -> stream the full JPEG (arg = photo number) */
 } remote_cmd_kind_t;
+
+/* Which run is active: none, a time-lapse, or a video clip. */
+typedef enum { RUN_NONE = 0, RUN_LAPSE, RUN_VIDEO } remote_run_t;
 
 typedef struct {
     remote_cmd_kind_t kind;
@@ -33,8 +37,9 @@ typedef struct {
    NULL on success, else a short static reason: "unknown command", "bad look", "bad interval", "bad time", "bad orientation". */
 const char *remote_parse(const char *text, size_t len, int look_count, int interval_count, remote_cmd_t *out);
 
-/* NULL if c may run now, else "time-lapse running" or "not running". */
-const char *remote_check(const remote_cmd_t *c, bool lapse_running);
+/* NULL if c may run now, else the active run's refusal ("time-lapse running",
+   "recording") or "not running" (for a stop with nothing running). */
+const char *remote_check(const remote_cmd_t *c, remote_run_t run);
 
 typedef enum { REMOTE_CARD_OK, REMOTE_CARD_NONE, REMOTE_CARD_FULL } remote_card_t;
 
@@ -45,11 +50,13 @@ typedef struct {
     const char *camera; /* "OV5640" / "OV2640" / "none" */
     int look;
     const char *look_name;
-    bool lapse_mode;
+    bool lapse_mode;   /* selected mode is time-lapse */
+    bool video_mode;   /* selected mode is video */
     int interval;
     const char *interval_name;
     bool lapse_running;
-    uint32_t frames, elapsed_s;
+    bool video_recording;
+    uint32_t frames, elapsed_s; /* the active run's (lapse frames or clip frames/seconds) */
     char folder[9];
     remote_card_t card;
     bool busy;

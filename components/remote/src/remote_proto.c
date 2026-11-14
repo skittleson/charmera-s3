@@ -104,6 +104,10 @@ const char *remote_parse(const char *text, size_t len, int look_count, int inter
             out->kind = RC_MODE_LAPSE;
             return NULL;
         }
+        if (strcmp(w[1], "video") == 0 && n == 2) {
+            out->kind = RC_MODE_VIDEO;
+            return NULL;
+        }
         return "unknown command";
     }
     if (strcmp(w[0], "shoot") == 0 && n == 1) {
@@ -137,15 +141,22 @@ const char *remote_parse(const char *text, size_t len, int look_count, int inter
     return "unknown command";
 }
 
-const char *remote_check(const remote_cmd_t *c, bool lapse_running)
+const char *remote_check(const remote_cmd_t *c, remote_run_t run)
 {
     if (c->kind == RC_TIME) {
         return NULL; /* setting the clock never disturbs a run */
     }
     if (c->kind == RC_LAPSE_STOP) {
-        return lapse_running ? NULL : "not running";
+        /* "lapse stop" is the generic stop: it ends a time-lapse or a video clip. */
+        return run == RUN_NONE ? "not running" : NULL;
     }
-    return lapse_running ? "time-lapse running" : NULL;
+    if (run == RUN_LAPSE) {
+        return "time-lapse running";
+    }
+    if (run == RUN_VIDEO) {
+        return "recording";
+    }
+    return NULL;
 }
 
 /* Appends into out[*pos..len); sets *ok false once anything doesn't fit. */
@@ -202,15 +213,17 @@ static const char *const CARD[] = {"ok", "none", "full"};
 size_t remote_status_json(const remote_status_t *s, char *out, size_t len)
 {
     sink_t k = {out, len, 0, len > 0};
+    const char *mode = s->video_mode ? "video" : s->lapse_mode ? "lapse" : "single";
+    const bool running = s->lapse_running || s->video_recording;
     put(&k, "{\"photos\":%u,\"left\":%u,\"battery\":%d,\"usb\":%s,\"camera\":", (unsigned)s->photos,
         (unsigned)s->left, s->battery_pct, s->usb ? "true" : "false");
     put_str(&k, s->camera);
     put(&k, ",\"look\":%d,\"lookName\":", s->look);
     put_str(&k, s->look_name);
-    put(&k, ",\"mode\":\"%s\",\"interval\":%d,\"intervalName\":", s->lapse_mode ? "lapse" : "single", s->interval);
+    put(&k, ",\"mode\":\"%s\",\"interval\":%d,\"intervalName\":", mode, s->interval);
     put_str(&k, s->interval_name);
-    put(&k, ",\"running\":%s,\"frames\":%u,\"elapsed\":%u,\"folder\":", s->lapse_running ? "true" : "false",
-        (unsigned)s->frames, (unsigned)s->elapsed_s);
+    put(&k, ",\"running\":%s,\"recording\":%s,\"frames\":%u,\"elapsed\":%u,\"folder\":", running ? "true" : "false",
+        s->video_recording ? "true" : "false", (unsigned)s->frames, (unsigned)s->elapsed_s);
     put_str(&k, s->folder);
     put(&k, ",\"card\":\"%s\",\"busy\":%s,\"last\":", CARD[s->card <= REMOTE_CARD_FULL ? s->card : 0],
         s->busy ? "true" : "false");

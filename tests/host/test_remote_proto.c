@@ -29,6 +29,8 @@ static void test_parse_each_command(void)
     TEST_ASSERT_EQUAL(RC_LOOK, c.kind);
     TEST_ASSERT_EQUAL(3, c.arg);
     TEST_ASSERT_EQUAL(RC_MODE_SINGLE, parse_ok("mode single").kind);
+    TEST_ASSERT_EQUAL(RC_MODE_VIDEO, parse_ok("mode video").kind);
+    TEST_ASSERT_EQUAL_STRING("unknown command", parse_err("mode video 3"));
     c = parse_ok("mode lapse");
     TEST_ASSERT_EQUAL(RC_MODE_LAPSE, c.kind);
     TEST_ASSERT_EQUAL(-1, c.arg);
@@ -116,18 +118,21 @@ static void test_parse_file_service(void)
 
 static void test_check_refuses_changes_while_running(void)
 {
-    const remote_cmd_kind_t refused[] = {RC_LOOK,  RC_MODE_SINGLE, RC_MODE_LAPSE,
-                                         RC_INTERVAL, RC_SHOOT,   RC_LAPSE_START, RC_ORIENTATION};
+    const remote_cmd_kind_t refused[] = {RC_LOOK,       RC_MODE_SINGLE, RC_MODE_LAPSE, RC_MODE_VIDEO,
+                                         RC_INTERVAL,   RC_SHOOT,       RC_LAPSE_START, RC_ORIENTATION};
     for (size_t i = 0; i < sizeof(refused) / sizeof(refused[0]); i++) {
         remote_cmd_t c = {.kind = refused[i], .arg = 1};
-        TEST_ASSERT_EQUAL_STRING("time-lapse running", remote_check(&c, true));
-        TEST_ASSERT_NULL(remote_check(&c, false));
+        TEST_ASSERT_EQUAL_STRING("time-lapse running", remote_check(&c, RUN_LAPSE));
+        TEST_ASSERT_EQUAL_STRING("recording", remote_check(&c, RUN_VIDEO));
+        TEST_ASSERT_NULL(remote_check(&c, RUN_NONE));
     }
     remote_cmd_t t = {.kind = RC_TIME};
-    TEST_ASSERT_NULL(remote_check(&t, true)); /* setting the clock never disturbs a run */
+    TEST_ASSERT_NULL(remote_check(&t, RUN_LAPSE)); /* setting the clock never disturbs a run */
+    TEST_ASSERT_NULL(remote_check(&t, RUN_VIDEO));
     remote_cmd_t stop = {.kind = RC_LAPSE_STOP, .arg = -1};
-    TEST_ASSERT_NULL(remote_check(&stop, true));
-    TEST_ASSERT_EQUAL_STRING("not running", remote_check(&stop, false));
+    TEST_ASSERT_NULL(remote_check(&stop, RUN_LAPSE));
+    TEST_ASSERT_NULL(remote_check(&stop, RUN_VIDEO)); /* "lapse stop" also stops a clip */
+    TEST_ASSERT_EQUAL_STRING("not running", remote_check(&stop, RUN_NONE));
 }
 
 static remote_status_t sample(void)
@@ -155,17 +160,27 @@ static void test_status_json_fields(void)
     const char *want[] = {"\"photos\":91", "\"left\":120", "\"battery\":82", "\"usb\":false",
                           "\"camera\":\"OV5640\"", "\"look\":3", "\"lookName\":\"Black & White\"",
                           "\"mode\":\"lapse\"", "\"interval\":1", "\"intervalName\":\"10 s\"", "\"running\":true",
-                          "\"frames\":12", "\"elapsed\":75", "\"folder\":\"101LAPSE\"", "\"card\":\"ok\"",
-                          "\"busy\":false", "\"last\":\"IMG_0093\"", "\"error\":\"\"", "\"clock\":true", "\"orientation\":\"portrait\"",
-                          "\"orientationSetting\":\"auto\""};
+                          "\"recording\":false", "\"frames\":12", "\"elapsed\":75", "\"folder\":\"101LAPSE\"",
+                          "\"card\":\"ok\"", "\"busy\":false", "\"last\":\"IMG_0093\"", "\"error\":\"\"", "\"clock\":true",
+                          "\"orientation\":\"portrait\"", "\"orientationSetting\":\"auto\""};
     for (size_t i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
         TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, want[i]), want[i]);
     }
     s.lapse_mode = false;
+    s.lapse_running = false;
     s.card = REMOTE_CARD_FULL;
     remote_status_json(&s, out, sizeof(out));
     TEST_ASSERT_NOT_NULL(strstr(out, "\"mode\":\"single\""));
     TEST_ASSERT_NOT_NULL(strstr(out, "\"card\":\"full\""));
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"running\":false"));
+    /* Video mode: mode=video, recording=true, running=true. */
+    s.lapse_mode = false;
+    s.video_mode = true;
+    s.video_recording = true;
+    remote_status_json(&s, out, sizeof(out));
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"mode\":\"video\""));
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"recording\":true"));
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"running\":true"));
 }
 
 static void test_status_json_escapes_quotes(void)
