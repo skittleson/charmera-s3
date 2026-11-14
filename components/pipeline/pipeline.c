@@ -42,6 +42,7 @@ static uint8_t *s_obuf;
 static size_t s_obuf_bytes;
 static uint16_t *s_thumb;
 static uint8_t *s_chunk;
+static uint8_t *s_video_rgb; /* one 320x240 RGB565 frame, for video encoding (PSRAM) */
 
 static int gcd(int a, int b)
 {
@@ -108,9 +109,10 @@ esp_err_t pipeline_init(const char *software)
     s_obuf = heap_caps_malloc(s_obuf_bytes, MALLOC_CAP_SPIRAM);
     s_thumb = jpeg_calloc_align(240 * 320 * 2, 16);
     s_chunk = heap_caps_malloc(WRITE_CHUNK, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    s_video_rgb = heap_caps_malloc(320 * 240 * 2, MALLOC_CAP_SPIRAM); /* video frame scratch */
     thumb_sidecar_reserve(); /* best effort: without it photos just have no .THM */
-    if (!s_strip || !s_obuf || !s_thumb || !s_chunk || (camera_full_is_jpeg() && !s_dec_block) ||
-        !look_reserve_rgb565(240, 320)) {
+    if (!s_strip || !s_obuf || !s_thumb || !s_chunk || !s_video_rgb ||
+        (camera_full_is_jpeg() && !s_dec_block) || !look_reserve_rgb565(240, 320)) {
         ESP_LOGE(TAG, "buffer allocation failed");
         return ESP_ERR_NO_MEM;
     }
@@ -359,6 +361,32 @@ void pipeline_thumb_sidecar(int number, const uint16_t *thumb, int w, int h)
     if (len) {
         storage_thumb_write(number, s_thm_jpg, len);
     }
+}
+
+/* Encode one video frame: copy the preview RGB565 into PSRAM scratch (the viewfinder
+   buffer is shared and look_apply_rgb565 edits in place), apply the look, JPEG-encode.
+   Returns the encoded size, 0 on failure. */
+size_t pipeline_encode_video_jpeg(const uint16_t *rgb565, int w, int h, look_t look, uint8_t *out, size_t cap)
+{
+    if (!s_video_rgb || !rgb565 || !out || w <= 0 || h <= 0 || (size_t)w * h * 2 > 320 * 240 * 2) {
+        return 0;
+    }
+    memcpy(s_video_rgb, rgb565, (size_t)w * h * 2);
+    look_apply_rgb565(look, (uint16_t *)s_video_rgb, w, h);
+    jpeg_enc_config_t cfg = DEFAULT_JPEG_ENC_CONFIG();
+    cfg.width = w;
+    cfg.height = h;
+    cfg.src_type = JPEG_PIXEL_FORMAT_RGB565_LE;
+    cfg.subsampling = JPEG_SUBSAMPLE_420;
+    cfg.quality = 75;
+    jpeg_enc_handle_t enc = NULL;
+    if (jpeg_enc_open(&cfg, &enc) != JPEG_ERR_OK) {
+        return 0;
+    }
+    int len = 0;
+    const jpeg_error_t r = jpeg_enc_process(enc, s_video_rgb, w * h * 2, out, (int)cap, &len);
+    jpeg_enc_close(enc);
+    return (r == JPEG_ERR_OK && len > 0) ? (size_t)len : 0;
 }
 
 static size_t write_all(FILE *f, const uint8_t *data, size_t len)
